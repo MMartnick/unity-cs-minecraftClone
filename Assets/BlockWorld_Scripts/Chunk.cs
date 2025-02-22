@@ -55,6 +55,8 @@ public class Chunk : MonoBehaviour
 
         MeshFilter mf = this.gameObject.AddComponent<MeshFilter>();
         MeshRenderer mr = this.gameObject.AddComponent<MeshRenderer>();
+
+
         mr.material = atlas;
         blocks = new Block[width, height, depth];
 
@@ -117,6 +119,8 @@ public class Chunk : MonoBehaviour
         newMesh.RecalculateBounds();
 
         mf.mesh = newMesh;
+        MeshCollider collider = this.gameObject.AddComponent<MeshCollider>();
+        collider.sharedMesh = mf.mesh;
     }
 
     [BurstCompile]

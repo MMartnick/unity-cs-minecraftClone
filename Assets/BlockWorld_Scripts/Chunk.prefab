@@ -51,6 +51,6 @@ MonoBehaviour:
   heightScale: 13
   scale: 0.001
   octaves: 7
-  heightOffset: -33
+  heightOffset: -18
   location: {x: 0, y: 0, z: 0}
   chunkData: 
