@@ -1,33 +1,33 @@
-using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
+
 public class Block
 {
 
     public Mesh mesh;
     Chunk parentChunk;
+
     public Block(Vector3 offset, MeshUtils.BlockType type, Chunk chunk)
     {
         parentChunk = chunk;
+        Vector3 blockLocalPos = offset - chunk.location;
+
         if (type != MeshUtils.BlockType.AIR)
         {
             List<Quad> quads = new List<Quad>();
-
-            if (!HasSolidNieghbor((int)offset.x, (int)offset.y - 1, (int)offset.z))
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y - 1, (int)blockLocalPos.z))
                 quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, offset, type));
 
-            if (!HasSolidNieghbor((int)offset.x, (int)offset.y + 1, (int)offset.z))
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y + 1, (int)blockLocalPos.z))
                 quads.Add(new Quad(MeshUtils.BlockSide.TOP, offset, type));
-
-            if (!HasSolidNieghbor((int)offset.x - 1, (int)offset.y, (int)offset.z))
+            if (!HasSolidNeighbour((int)blockLocalPos.x - 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
                 quads.Add(new Quad(MeshUtils.BlockSide.LEFT, offset, type));
-
-            if (!HasSolidNieghbor((int)offset.x + 1, (int)offset.y, (int)offset.z))
+            if (!HasSolidNeighbour((int)blockLocalPos.x + 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
                 quads.Add(new Quad(MeshUtils.BlockSide.RIGHT, offset, type));
-
-            if (!HasSolidNieghbor((int)offset.x, (int)offset.y, (int)offset.z + 1))
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z + 1))
                 quads.Add(new Quad(MeshUtils.BlockSide.FRONT, offset, type));
-
-            if (!HasSolidNieghbor((int)offset.x, (int)offset.y, (int)offset.z - 1))
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z - 1))
                 quads.Add(new Quad(MeshUtils.BlockSide.BACK, offset, type));
 
             if (quads.Count == 0) return;
@@ -41,21 +41,21 @@ public class Block
             }
 
             mesh = MeshUtils.MergeMeshes(sideMeshes);
-            mesh.name = "Cube_0_0_0";
+            mesh.name = "Cube" + "_" + offset.x + "_" + offset.x + "_" + offset.z;
         }
     }
 
-    public bool HasSolidNieghbor(int x, int y, int z) {
-        if(x<0 ||x>= parentChunk.width||
-        y < 0 || y>= parentChunk.height||
-        z < 0 || z >= parentChunk.depth
-            )
+    public bool HasSolidNeighbour(int x, int y, int z)
+    {
+        if (x < 0 || x >= parentChunk.width ||
+            y < 0 || y >= parentChunk.height ||
+            z < 0 || z >= parentChunk.depth)
         {
             return false;
         }
-        if (parentChunk.chunkData[parentChunk.width*(y+parentChunk.depth *z)]==MeshUtils.BlockType.AIR || parentChunk.chunkData[parentChunk.width * (y + parentChunk.depth * z)] == MeshUtils.BlockType.WATER)
+        if (parentChunk.chunkData[x + parentChunk.width * (y + parentChunk.depth * z)] == MeshUtils.BlockType.AIR
+            || parentChunk.chunkData[x + parentChunk.width * (y + parentChunk.depth * z)] == MeshUtils.BlockType.WATER)
             return false;
         return true;
-
     }
 }

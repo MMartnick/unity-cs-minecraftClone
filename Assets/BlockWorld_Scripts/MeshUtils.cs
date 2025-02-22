@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UIElements;
 using VertexData = System.Tuple<UnityEngine.Vector3, UnityEngine.Vector3, UnityEngine.Vector2>;
 public class MeshUtils {
     public enum BlockType
@@ -84,5 +85,18 @@ public class MeshUtils {
             mesh.normals = norms.ToArray();
             mesh.uv = uvs.ToArray();
 
-        } 
+        }
+
+
+    public static float fBM(float x, float z, int octaves, float scale, float heightScale, float heightOffset)
+    {
+        float total = 0;
+        float frequency = 1;
+        for (int i = 0; i < octaves; i++)
+        {
+            total += Mathf.PerlinNoise(x * scale * frequency, z * scale * frequency) * heightScale;
+            frequency *= 2;
+        }
+        return total + heightOffset;
+    }
 }
