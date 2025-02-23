@@ -18,7 +18,12 @@ public class Chunk : MonoBehaviour
 
     public Block[,,] blocks;
     // Flat[x + WIDTH * (y + DEPTH * z)] = Original[x, y, z]
+
+
+
     public MeshUtils.BlockType[] chunkData;
+
+    public MeshRenderer meshRenderer;
 
     void BuildChunk()
     {
@@ -82,6 +87,8 @@ public class Chunk : MonoBehaviour
         MeshFilter mf = this.gameObject.AddComponent<MeshFilter>();
         MeshRenderer mr = this.gameObject.AddComponent<MeshRenderer>();
 
+        meshRenderer = mr;
+
 
         mr.material = atlas;
         blocks = new Block[width, height, depth];
@@ -129,7 +136,7 @@ public class Chunk : MonoBehaviour
 
         var handle = jobs.Schedule(inputMeshes.Count, 4);
         var newMesh = new Mesh();
-        newMesh.name = "Chunk" + "_" + location.x + "_" + location.x + "_" + location.z; ;
+        newMesh.name = "Chunk" + "_" + location.x + "_" + location.x + "_" + location.z;
         var sm = new SubMeshDescriptor(0, triStart, MeshTopology.Triangles);
         sm.firstVertex = 0;
         sm.vertexCount = vertexStart;

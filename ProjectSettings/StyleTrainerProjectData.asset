@@ -31,7 +31,7 @@ MonoBehaviour:
       data:
         m_Guid: fe1f2761-3d43-4260-8440-b93eda5d3af9
         m_State: 1
-        m_Disposing: 0
+        m_Disposing: 1
         m_Styles: []
         m_Version: 202231001
     - rid: 4059041837214597331
