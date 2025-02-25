@@ -24,16 +24,24 @@ public class Chunk : MonoBehaviour
     public MeshUtils.BlockType[] chunkData;
 
     public MeshRenderer meshRenderer;
+    CalculateBlockTypes calculateBlockTypes;
+    JobHandle jobHandle;
 
-    void BuildChunk()
+    struct CalculateBlockTypes: IJobParallelFor
     {
-        int blockCount = width * depth * height;
-        chunkData = new MeshUtils.BlockType[blockCount];
-        for (int i = 0; i < blockCount; i++)
+        public NativeArray<MeshUtils.BlockType> cData;
+        public int width;
+        public int height;
+        public Vector3 location;
+        public Unity.Mathematics.Random random;
+
+        public void Execute(int i)
         {
             int x = i % width + (int)location.x;
             int y = (i / width) % height + (int)location.y;
             int z = i / (width * height) + (int)location.z;
+
+            random = new Unity.Mathematics.Random(1);
 
             int surfaceHeight = (int)MeshUtils.fBM(x, z, World.surfaceSettings.octaves, World.surfaceSettings.scale, World.surfaceSettings.heightScale, World.surfaceSettings.heightOffset);
             int stoneHeight = (int)MeshUtils.fBM(x, z, World.stoneSettings.octaves, World.stoneSettings.scale, World.stoneSettings.heightScale, World.stoneSettings.heightOffset);
@@ -44,33 +52,52 @@ public class Chunk : MonoBehaviour
 
             if (y == 0)
             {
-                chunkData[i] = MeshUtils.BlockType.BEDROCK;
-                continue;
+                cData[i] = MeshUtils.BlockType.BEDROCK;
+                return;
             }
 
             if (digCave < World.caveSettings.probability)
             {
-                chunkData[i] = MeshUtils.BlockType.AIR;
-                continue;
+                cData[i] = MeshUtils.BlockType.AIR;
+                return;
             }
 
             if (surfaceHeight == y)
             {
-                chunkData[i] = MeshUtils.BlockType.GRASSSIDE;
+                cData[i] = MeshUtils.BlockType.GRASSSIDE;
             }
-            else if (y < diamondTHeight && y > diamondBHeight &&UnityEngine.Random.Range(0.0f, 1.0f) < World.stoneSettings.probability)
-                chunkData[i] = MeshUtils.BlockType.DIAMOND;
+            else if (y < diamondTHeight && y > diamondBHeight && random.NextFloat(1) < World.stoneSettings.probability)
+                cData[i] = MeshUtils.BlockType.DIAMOND;
 
-            else if (y < stoneHeight && UnityEngine.Random.Range(0.0f,1.0f)< World.stoneSettings.probability)
-                chunkData[i] = MeshUtils.BlockType.STONE;
+            else if (y < stoneHeight && random.NextFloat(1) < World.stoneSettings.probability)
+                cData[i] = MeshUtils.BlockType.STONE;
 
             else if (y < surfaceHeight)
-                chunkData[i] = MeshUtils.BlockType.DIRT;
-      
+                cData[i] = MeshUtils.BlockType.DIRT;
+
             else
-                chunkData[i] = MeshUtils.BlockType.AIR;
+                cData[i] = MeshUtils.BlockType.AIR;
 
         }
+    }
+
+
+    void BuildChunk()
+    {
+        int blockCount = width * depth * height;
+        chunkData = new MeshUtils.BlockType[blockCount];
+NativeArray<MeshUtils.BlockType> blockTypes = new NativeArray<MeshUtils.BlockType>(chunkData, Allocator.Persistent);
+        calculateBlockTypes = new CalculateBlockTypes()
+        {
+            cData = blockTypes,
+            width = width,
+            height = height,
+            location = location
+        };
+        jobHandle = calculateBlockTypes.Schedule(chunkData.Length, 64);
+        jobHandle.Complete();
+        calculateBlockTypes.cData.CopyTo(chunkData);
+        blockTypes.Dispose();
     }
 
     void Start()
