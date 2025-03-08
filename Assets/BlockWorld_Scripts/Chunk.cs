@@ -26,6 +26,9 @@ public class Chunk : MonoBehaviour
     public MeshUtils.BlockType[] healthData;
     public MeshRenderer meshRenderer;
 
+    private Dictionary<(int, int, int, int), Vector3> cornerCache =
+    new Dictionary<(int, int, int, int), Vector3>();
+
     CalculateBlockTypes calculateBlockTypes;
     JobHandle jobHandle;
     public NativeArray<Unity.Mathematics.Random> RandomArray { get; private set; }
@@ -300,9 +303,252 @@ public class Chunk : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
-    void Update()
+    /// <summary>
+    /// Returns the final (smoothed) corner position for (bx,by,bz, cornerIndex)
+    /// If not in cornerCache, compute it with smoothing logic, store, then return.
+    /// This ensures consistent corner positions across adjacent blocks.
+    /// </summary>
+    public Vector3 GetOrComputeCorner(int bx, int by, int bz,
+                                      int cornerIndex,
+                                      MeshUtils.BlockType blockType)
     {
+        var key = (bx, by, bz, cornerIndex);
+        if (cornerCache.TryGetValue(key, out Vector3 cachedPos))
+        {
+            // Already computed
+            return cachedPos;
+        }
 
+        // If not found, compute it:
+        Vector3 blockOrigin = new Vector3(bx + location.x,
+                                         by + location.y,
+                                         bz + location.z);
+        Vector3 cornerPos = ComputeCornerPosition(blockOrigin,
+                                                  blockType,
+                                                  bx, by, bz,
+                                                  cornerIndex);
+
+        // Store in dictionary
+        cornerCache[key] = cornerPos;
+        return cornerPos;
+    }
+
+    /// <summary>
+    /// The actual smoothing logic (with partial diagonal weighting).
+    /// cornerIndex indicates which of the 8 corners (0..7).
+    /// We'll do the same axis + planeDiag approach, but only for
+    /// a single corner.
+    /// </summary>
+    private Vector3 ComputeCornerPosition(Vector3 blockOrigin,
+                                          MeshUtils.BlockType blockType,
+                                          int bx, int by, int bz,
+                                          int cornerIndex)
+    {
+        // 8 base corners
+        Vector3 baseCorner = GetBaseCorner(blockOrigin, cornerIndex);
+
+        // We'll gather open directions in a list, average them once
+        List<Vector3> shifts = new List<Vector3>();
+
+        // Axis neighbors for this corner:
+        var axisOffsets = GetAxisOffsets(bx, by, bz, cornerIndex);
+
+        // Diagonal neighbors for this corner:
+        var diagOffsets = GetPlaneDiagonalOffset(bx, by, bz, cornerIndex);
+
+        // Check each offset => if open, add shift
+        // We'll scale diagonals to avoid over-folding
+        float cornerShift = -2f;    // or -4f if you prefer
+        float diagScale = 0.6f;   // partial weighting to reduce over-fold
+
+        foreach (var (nOffset, shiftDir) in axisOffsets)
+        {
+            if (IsNeighborOpen(blockType, nOffset.x, nOffset.y, nOffset.z))
+            {
+                // If water => skip Y shift
+                if (blockType == MeshUtils.BlockType.WATER &&
+                    Mathf.Abs(shiftDir.y) > 0.001f)
+                {
+                    continue;
+                }
+                shifts.Add(shiftDir * cornerShift);
+            }
+        }
+
+        // Check diagonal
+        (Vector3Int dOff, Vector3 diagVec) = diagOffsets;
+        if (IsNeighborOpen(blockType, dOff.x, dOff.y, dOff.z))
+        {
+            // Scale the diagonal shift to avoid big folds
+            Vector3 scaledDiag = diagVec * cornerShift * diagScale;
+
+            if (blockType == MeshUtils.BlockType.WATER &&
+                Mathf.Abs(scaledDiag.y) > 0.001f)
+            {
+                // skip vertical for water if any
+            }
+            else
+            {
+                shifts.Add(scaledDiag);
+            }
+        }
+
+        if (shifts.Count == 0)
+            return baseCorner;
+
+        // average them
+        Vector3 sum = Vector3.zero;
+        foreach (var s in shifts) sum += s;
+        Vector3 avg = sum / shifts.Count;
+
+        return baseCorner + avg;
+    }
+
+    /// <summary>
+    /// Return the base corner position in world space 
+    /// for cornerIndex [0..7].
+    /// </summary>
+    private Vector3 GetBaseCorner(Vector3 blockOrigin, int cornerIndex)
+    {
+        // local offsets for corners 0..7
+        // same as your existing logic, but for a single corner
+        switch (cornerIndex)
+        {
+            case 0: return new Vector3(-0.5f, -0.5f, 0.5f) + blockOrigin;
+            case 1: return new Vector3(0.5f, -0.5f, 0.5f) + blockOrigin;
+            case 2: return new Vector3(0.5f, -0.5f, -0.5f) + blockOrigin;
+            case 3: return new Vector3(-0.5f, -0.5f, -0.5f) + blockOrigin;
+            case 4: return new Vector3(-0.5f, 0.5f, 0.5f) + blockOrigin;
+            case 5: return new Vector3(0.5f, 0.5f, 0.5f) + blockOrigin;
+            case 6: return new Vector3(0.5f, 0.5f, -0.5f) + blockOrigin;
+            case 7: return new Vector3(-0.5f, 0.5f, -0.5f) + blockOrigin;
+        }
+        return blockOrigin; // fallback
+    }
+
+    /// <summary>
+    /// Return the axis neighbor offsets for that corner.
+    /// Each corner has up to 3 axis neighbors: ±x, ±y, ±z.
+    /// But we store them as (nOffset, shiftDir=1).
+    /// We'll multiply shiftDir by cornerShift in code.
+    /// </summary>
+    private (Vector3Int offset, Vector3 shiftDir)[] GetAxisOffsets(int bx, int by, int bz, int cornerIndex)
+    {
+        // We'll define them per corner:
+        switch (cornerIndex)
+        {
+            case 0: // bottom-left-front
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
+                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
+                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
+                };
+            case 1: // bottom-right-front
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
+                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
+                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
+                };
+            case 2: // bottom-right-back
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
+                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
+                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
+                };
+            case 3: // bottom-left-back
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
+                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
+                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
+                };
+            case 4: // top-left-front
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
+                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
+                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
+                };
+            case 5: // top-right-front
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
+                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
+                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
+                };
+            case 6: // top-right-back
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
+                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
+                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
+                };
+            case 7: // top-left-back
+                return new (Vector3Int, Vector3)[]
+                {
+                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
+                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
+                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
+                };
+        }
+        return new (Vector3Int, Vector3)[0];
+    }
+
+    /// <summary>
+    /// Return a single plane diagonal offset for each corner in XZ-plane.
+    /// We'll scale it in code. 
+    /// </summary>
+    private (Vector3Int, Vector3) GetPlaneDiagonalOffset(int bx, int by, int bz, int cornerIndex)
+    {
+        // We'll define it similarly to your previous approach, 
+        // but only one diagonal offset per corner. 
+        // For instance:
+        switch (cornerIndex)
+        {
+            case 0: // bottom-left-front => x-1,z+1 => shift +X, -Z
+                return (new Vector3Int(bx - 1, by, bz + 1), new Vector3(+1, 0, -1));
+            case 1: // bottom-right-front => x+1,z+1 => shift -X, -Z
+                return (new Vector3Int(bx + 1, by, bz + 1), new Vector3(-1, 0, -1));
+            case 2: // bottom-right-back => x+1,z-1 => shift -X, +Z
+                return (new Vector3Int(bx + 1, by, bz - 1), new Vector3(-1, 0, +1));
+            case 3: // bottom-left-back => x-1,z-1 => shift +X, +Z
+                return (new Vector3Int(bx - 1, by, bz - 1), new Vector3(+1, 0, +1));
+            case 4: // top-left-front => same as corner0
+                return (new Vector3Int(bx - 1, by, bz + 1), new Vector3(+1, 0, -1));
+            case 5: // top-right-front => same as corner1
+                return (new Vector3Int(bx + 1, by, bz + 1), new Vector3(-1, 0, -1));
+            case 6: // top-right-back => same as corner2
+                return (new Vector3Int(bx + 1, by, bz - 1), new Vector3(-1, 0, +1));
+            case 7: // top-left-back => same as corner3
+                return (new Vector3Int(bx - 1, by, bz - 1), new Vector3(+1, 0, +1));
+        }
+        return (new Vector3Int(bx, by, bz), Vector3.zero);
+    }
+
+    /// <summary>
+    /// If block is WATER => open if neighbor != WATER
+    /// else => open if neighbor == AIR
+    /// </summary>
+    private bool IsNeighborOpen(MeshUtils.BlockType myType, int nx, int ny, int nz)
+    {
+        if (nx < 0 || nx >= width ||
+            ny < 0 || ny >= height ||
+            nz < 0 || nz >= depth)
+        {
+            return false;
+        }
+
+        var neighborType = chunkData[nx + width * (ny + depth * nz)];
+        if (myType == MeshUtils.BlockType.WATER)
+        {
+            return (neighborType != MeshUtils.BlockType.WATER);
+        }
+        else
+        {
+            return (neighborType == MeshUtils.BlockType.AIR);
+        }
     }
 }
