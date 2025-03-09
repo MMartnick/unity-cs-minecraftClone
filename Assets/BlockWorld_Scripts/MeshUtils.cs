@@ -20,7 +20,7 @@ public static class MeshUtils
     { 2, 2, 1, 1, 4, 2, 4, 4, 3, 4, -1, 3, 4, -1, -1, -1, -1, -1, -1
     };
 
-    public static HashSet<BlockType> canDrop = new HashSet<BlockType> { BlockType.SAND, BlockType.WATER };
+    public static HashSet<BlockType> canDrop = new HashSet<BlockType> {  BlockType.WATER };
     public static HashSet<BlockType> canFlow = new HashSet<BlockType> { BlockType.WATER };
 
     public enum BlockSide { BOTTOM, TOP, LEFT, RIGHT, FRONT, BACK };

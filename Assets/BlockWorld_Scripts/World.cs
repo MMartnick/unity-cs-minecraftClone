@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
 using UnityEngine.UI;
 using static MeshUtils;
@@ -37,6 +39,9 @@ public class World : MonoBehaviour
 
     public static PerlinSettings surfaceSettings;
     public PerlinGrapher surface;
+
+    public static PerlinSettings sandSettings;
+    public PerlinGrapher sand;
 
     public static PerlinSettings stoneSettings;
     public PerlinGrapher stone;
@@ -152,6 +157,90 @@ public class World : MonoBehaviour
         
     }
 
+
+        struct CalculateBlockTypes : IJobParallelFor
+        {
+            public NativeArray<MeshUtils.BlockType> cData;
+            public NativeArray<MeshUtils.BlockType> hData;
+            public int width;
+            public int height;
+            public Vector3 location;
+            public NativeArray<Unity.Mathematics.Random> randoms;
+
+            public void Execute(int i)
+            {
+                int x = i % width + (int)location.x;
+                int y = (i / width) % height + (int)location.y;
+                int z = i / (width * height) + (int)location.z;
+
+                var random = randoms[i];
+
+                int surfaceHeight = (int)MeshUtils.fBM(x, z, World.surfaceSettings.octaves,
+                                                       World.surfaceSettings.scale, World.surfaceSettings.heightScale,
+                                                       World.surfaceSettings.heightOffset);
+
+            // other heights: stone, diamond, etc...
+            int sandHeight = (int)MeshUtils.fBM(x, z, World.sandSettings.octaves,
+                                                 World.sandSettings.scale, World.sandSettings.heightScale,
+                                                 World.sandSettings.heightOffset);
+
+            // other heights: stone, diamond, etc...
+            int stoneHeight = (int)MeshUtils.fBM(x, z, World.stoneSettings.octaves,
+                                                     World.stoneSettings.scale, World.stoneSettings.heightScale,
+                                                     World.stoneSettings.heightOffset);
+
+                // ...
+                hData[i] = MeshUtils.BlockType.NOCRACK;
+
+                if (y == 0)
+                {
+                    cData[i] = MeshUtils.BlockType.BEDROCK;
+                    return;
+                }
+
+                // caves
+                int digCave = (int)MeshUtils.fBM3D(x, y, z, World.caveSettings.octaves,
+                                                   World.caveSettings.scale, World.caveSettings.heightScale,
+                                                   World.caveSettings.heightOffset);
+
+                if (digCave < World.caveSettings.probability)
+                {
+                    cData[i] = MeshUtils.BlockType.AIR;
+                    return;
+                }
+
+                // *** FIX *** If y is exactly surfaceHeight => top block:
+                if (surfaceHeight == y)
+                {
+                    // remove WOODBASE line
+                    cData[i] = MeshUtils.BlockType.GRASSTOP; // or GRASSSIDE, but GRASSTOP helps the “top” look
+                }
+                else if (y < stoneHeight)
+                {
+                    cData[i] = MeshUtils.BlockType.STONE;
+                }
+                 else if (y < sandHeight)
+                 {
+                     cData[i] = MeshUtils.BlockType.SAND;
+                 }
+                 else if (y < surfaceHeight)
+                {
+                    cData[i] = MeshUtils.BlockType.DIRT;
+                }
+                else if (y < 9)
+                {
+                    cData[i] = MeshUtils.BlockType.WATER;
+                }
+                else
+                    cData[i] = MeshUtils.BlockType.AIR;
+            }
+        }
+
+        // The rest of World code (BuildWorld, Update, etc.) is typical.
+        // ...
+    
+
+
     // Start is called before the first frame update
     void Start()
     {
@@ -162,6 +251,9 @@ public class World : MonoBehaviour
 
         surfaceSettings = new PerlinSettings(surface.heightScale, surface.scale,
                                              surface.octaves, surface.heightOffset, surface.probability);
+
+        sandSettings = new PerlinSettings(sand.heightScale, sand.scale,
+                                           sand.octaves, sand.heightOffset, sand.probability);
 
         stoneSettings = new PerlinSettings(stone.heightScale, stone.scale,
                                            stone.octaves, stone.heightOffset, stone.probability);

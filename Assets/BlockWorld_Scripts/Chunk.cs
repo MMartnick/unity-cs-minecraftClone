@@ -11,9 +11,9 @@ public class Chunk : MonoBehaviour
 {
     public Material atlas;
 
-    public int width = 2;
-    public int height = 2;
-    public int depth = 2;
+    public int width = 10;
+    public int height = 10;
+    public int depth = 10;
 
     public Vector3 location;
 
@@ -54,6 +54,10 @@ public class Chunk : MonoBehaviour
                                                    World.surfaceSettings.scale, World.surfaceSettings.heightScale,
                                                    World.surfaceSettings.heightOffset);
 
+            int sandHeight = (int)MeshUtils.fBM(x, z, World.sandSettings.octaves,
+                                       World.sandSettings.scale, World.sandSettings.heightScale,
+                                       World.sandSettings.heightOffset);
+
             int stoneHeight = (int)MeshUtils.fBM(x, z, World.stoneSettings.octaves,
                                                    World.stoneSettings.scale, World.stoneSettings.heightScale,
                                                    World.stoneSettings.heightOffset);
@@ -92,7 +96,7 @@ public class Chunk : MonoBehaviour
             {
                 //if (plantTree < World.treeSettings.probability && random.NextFloat(1) <= 0.1)
                 //{
-                    cData[i] = MeshUtils.BlockType.WOODBASE;
+                   // cData[i] = MeshUtils.BlockType.WOODBASE;
                 //}
                 //else
                     cData[i] = MeshUtils.BlockType.GRASSSIDE;
@@ -101,6 +105,8 @@ public class Chunk : MonoBehaviour
                 cData[i] = MeshUtils.BlockType.DIAMOND;
             else if (y < stoneHeight && random.NextFloat(1) <= World.stoneSettings.probability)
                 cData[i] = MeshUtils.BlockType.STONE;
+            else if (y < sandHeight && random.NextFloat(1) <= World.sandSettings.probability)
+                cData[i] = MeshUtils.BlockType.SAND;
             else if (y < surfaceHeight)
                 cData[i] = MeshUtils.BlockType.DIRT;
             else if (y < 20)

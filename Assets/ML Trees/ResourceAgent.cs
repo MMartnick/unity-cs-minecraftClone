@@ -2,8 +2,6 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-
-// If MeshUtils is in a separate namespace, ensure it's accessible
 using static MeshUtils;
 
 public class ResourceAgent : Agent
@@ -11,45 +9,63 @@ public class ResourceAgent : Agent
     [Header("World Reference")]
     public World world;
 
-    [Header("Agent Grid Position")]
-    public int gridX;
-    public int gridY;
-    public int gridZ;
+    // The agent’s position in block coordinates,
+    // but note that we interpret (gridX, gridY, gridZ) 
+    // as the block "underneath" the agent,
+    // and physically the agent is in the air cell just above it.
+    private int gridX, gridY, gridZ;
 
-    [Tooltip("If each block is 1 unit in world-space, set blockScale=1.")]
+    [Tooltip("If each block is 1 meter, set blockScale=1.")]
     public float blockScale = 1f;
 
-    [Tooltip("Seconds between moves (for real-time). For ML-Agents training, set small or remove.")]
+    [Tooltip("Seconds between moves; reduce for faster training.")]
     public float moveInterval = 1f;
     private float nextMoveTime = 0f;
 
-    [Tooltip("How quickly to move toward the next position (for smooth movement).")]
+    [Tooltip("Agent moves smoothly to the target position in Update().")]
     public float moveSpeed = 5f;
-
     private Vector3 _targetPosition;
     private bool _isMoving = false;
 
-    /// <summary>
-    /// Called once when the agent is initialized.
-    /// </summary>
+    private int stepsSinceLastMove = 0;
+    private (int x, int y, int z) lastPos;
+
     public override void Initialize()
     {
-        // If out of bounds, clamp or set a default valid location
+        RandomizeSpawn();
+        // Place agent physically above the block at (gridX, gridY, gridZ).
+        // The agent is in the air cell => "ny+1" in local coords
+        SetAgentAboveBlock(gridX, gridY, gridZ);
+        transform.position = _targetPosition;
+
+        lastPos = (gridX, gridY, gridZ);
+        stepsSinceLastMove = 0;
+    }
+
+    private void RandomizeSpawn()
+    {
+        // measure total block extents
+        int totalX = (World.worldDimensions.x + World.extraWorldDimensions.x)
+                     * World.chunkDimensions.x;
+        int totalZ = (World.worldDimensions.z + World.extraWorldDimensions.z)
+                     * World.chunkDimensions.z;
+
+        // pick random x,z, then pick y=some ground or 0
+        gridX = Random.Range(0, totalX / 2);
+        gridZ = Random.Range(0, totalZ / 2);
+        gridY = 25; // or find actual ground
+
+        // ensure in bounds
         if (!world.InBounds(gridX, gridY, gridZ))
         {
             gridX = 25;
             gridY = 25;
             gridZ = 25;
         }
-
-        // Start at the correct position immediately
-        SetTargetWorldPosition(gridX, gridY, gridZ);
-        transform.position = _targetPosition;
     }
 
     private void Update()
     {
-        // Smoothly move toward the target position each frame
         if (_isMoving)
         {
             transform.position = Vector3.MoveTowards(
@@ -58,7 +74,6 @@ public class ResourceAgent : Agent
                 moveSpeed * Time.deltaTime
             );
 
-            // Check if we've arrived
             if (Vector3.Distance(transform.position, _targetPosition) < 0.001f)
             {
                 transform.position = _targetPosition;
@@ -67,172 +82,184 @@ public class ResourceAgent : Agent
         }
     }
 
-    /// <summary>
-    /// Here you collect observations that the ML policy can use
-    /// to decide how to move.
-    /// </summary>
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 1) The block at the agent's position
-        BlockType currentBlock = world.GetBlockType(gridX, gridY, gridZ);
-        sensor.AddObservation((int)currentBlock);
+        // The block "under" the agent is at (gridX, gridY, gridZ).
+        // The agent physically is in the cell above it => (gridY+1) in world coords 
+        // but we store "below block coords" in gridY.
 
-        // 2) Is this position lit?
-        bool isLit = world.IsLit(gridX, gridY, gridZ);
+        BlockType belowBlock = world.GetBlockType(gridX, gridY, gridZ);
+        sensor.AddObservation((int)belowBlock);
+
+        // Light check in the cell the agent physically occupies => i.e. above the block
+        // but we can approximate with "below" or do "y+1"
+        bool isLit = world.IsLit(gridX, gridY + 1, gridZ);
         sensor.AddObservation(isLit ? 1 : 0);
 
-        // 3) The agent's Y-level (could help it learn altitude)
         sensor.AddObservation(gridY);
-
-        // Add more observations if needed...
     }
 
-    /// <summary>
-    /// This is called each decision step.
-    /// The agent's discrete action decides how to move.
-    /// </summary>
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // Small negative reward each step to encourage movement or exploration
-        AddReward(-0.001f);
+        // small step cost
+        AddReward(-0.005f);
 
-        // If using real-time gating, ensure enough time has passed for the next move
-        if (Time.time < nextMoveTime)
-            return;
+        if (Time.time < nextMoveTime) return;
 
-        // *** Use the ML-Agents action to decide direction ***
-        // 0=stay, 1=left, 2=right, 3=front, 4=back, 5=up, 6=down
         int move = actions.DiscreteActions[0];
 
-        int nx = gridX;
-        int ny = gridY;
-        int nz = gridZ;
+        // penalty if agent chooses "stay" = 0
+        if (move == 0)
+        {
+            AddReward(-0.01f);
+        }
+
+        // interpret the 6 possible moves => left,right,forward,back,up,down
+        // Actually we want to choose an "adjacent block" (nx, ny, nz),
+        // Then stand in the air cell above that block => (nx, ny+1, nz).
+        int bx = gridX;
+        int by = gridY;
+        int bz = gridZ;
 
         switch (move)
         {
-            case 1: nx -= 1; break; // left
-            case 2: nx += 1; break; // right
-            case 3: nz += 1; break; // forward
-            case 4: nz -= 1; break; // backward
-            case 5: ny += 1; break; // up
-            case 6: ny -= 1; break; // down
-                                    // case 0 => no movement
+            case 1: bx -= 1; break; // left
+            case 2: bx += 1; break; // right
+            case 3: bz += 1; break; // forward
+            case 4: bz -= 1; break; // backward
+            case 5: by += 1; break; // up
+            case 6: by -= 1; break; // down
         }
 
-        // Attempt to move to the chosen position
-        AttemptMove(nx, ny, nz);
+        // Attempt to stand "above" the block (bx, by, bz).
+        AttemptMoveAboveBlock(bx, by, bz);
 
-        // Example: Add a reward for the new location’s "environment score" 
-        // (optional - your design choice)
         float locationScore = ComputeLocationScore(gridX, gridY, gridZ);
         AddReward(locationScore);
 
-        // Possibly debug-log the agent’s position, reward, etc.
-        // Debug.Log($"Agent at ({gridX},{gridY},{gridZ}) with reward {GetCumulativeReward()}");
+        // stuck check
+        if ((gridX, gridY, gridZ) == lastPos)
+        {
+            stepsSinceLastMove++;
+            if (stepsSinceLastMove > 30)
+            {
+                AddReward(-1f);
+                EndEpisode();
+            }
+        }
+        else
+        {
+            stepsSinceLastMove = 0;
+            lastPos = (gridX, gridY, gridZ);
+        }
 
-        // Set the next time the agent can move (for real-time gating)
         nextMoveTime = Time.time + moveInterval;
     }
 
-    /// <summary>
-    /// Heuristic function for manual testing (e.g. arrow keys).
-    /// </summary>
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discrete = actionsOut.DiscreteActions;
-        discrete[0] = 0; // default stay
-
+        discrete[0] = 0;
         if (Input.GetKey(KeyCode.LeftArrow)) discrete[0] = 1;
         if (Input.GetKey(KeyCode.RightArrow)) discrete[0] = 2;
         if (Input.GetKey(KeyCode.UpArrow)) discrete[0] = 3;
         if (Input.GetKey(KeyCode.DownArrow)) discrete[0] = 4;
-        if (Input.GetKey(KeyCode.Q)) discrete[0] = 5; // up
-        if (Input.GetKey(KeyCode.E)) discrete[0] = 6; // down
+        if (Input.GetKey(KeyCode.Q)) discrete[0] = 5;
+        if (Input.GetKey(KeyCode.E)) discrete[0] = 6;
     }
 
     /// <summary>
-    /// Handles attempting to move the agent to (nx, ny, nz),
-    /// checking for bounds or water, etc.
+    /// The agent wants to stand "in the air cell above" the block at (bx,by,bz).
+    /// So we physically set agent coords => (bx, by+1, bz), if valid/in-bounds.
+    /// If that block is water => penalty or skip. If out of bounds => skip. 
     /// </summary>
-    private void AttemptMove(int nx, int ny, int nz)
+    private void AttemptMoveAboveBlock(int bx, int by, int bz)
     {
-        // Out of world bounds => negative reward and skip
-        if (!world.InBounds(nx, ny, nz))
+        // first check if (bx,by,bz) is in bounds
+        if (!world.InBounds(bx, by, bz))
         {
             AddReward(-0.1f);
             return;
         }
 
-        // Can't stand on WATER => negative reward
-        BlockType targetBlock = world.GetBlockType(nx, ny, nz);
-        if (targetBlock == BlockType.WATER)
+        BlockType belowBlock = world.GetBlockType(bx, by, bz);
+
+        // if it's water => penalty, but let agent stand in the air above it anyway, if we want
+        // or skip if you want no water moves
+        if (belowBlock == BlockType.WATER)
         {
-            AddReward(-0.2f);
+            AddReward(-2f);
+            // we can keep going or skip
+        }
+
+        // The cell the agent physically occupies => (bx, by+1, bz)
+        int topY = by + 1;
+        if (!world.InBounds(bx, topY, bz))
+        {
+            AddReward(-0.1f);
             return;
         }
 
-        // Valid space => update our grid position
-        gridX = nx;
-        gridY = ny;
-        gridZ = nz;
+        // finalize agent's new "below block coords"
+        gridX = bx;
+        gridY = by;
+        gridZ = bz;
 
-        // Now smoothly move toward that new location
-        SetTargetWorldPosition(gridX, gridY, gridZ);
+        // place agent physically at (bx, by+1, bz)
+        Debug.Log($"Agent stands above block=({bx},{by},{bz}) => agentCoord=({bx},{by},{bz}) belowBlock={belowBlock}");
+        SetAgentAboveBlock(bx, by, bz);
     }
 
     /// <summary>
-    /// Sets the agent's _targetPosition in world space,
-    /// and triggers smooth movement in Update().
+    /// Sets the agent to the center of the cell "one above" the block at (bx,by,bz).
+    /// That is physically (bx+0.5, (by+1)+0.5, bz+0.5).
     /// </summary>
-    private void SetTargetWorldPosition(int x, int y, int z)
+    private void SetAgentAboveBlock(int bx, int by, int bz)
     {
-        _targetPosition = new Vector3(x * blockScale, y * blockScale, z * blockScale);
+        float centerX = (bx + 0.5f) * blockScale;
+        float centerY = ((by + 1) + 0.5f) * blockScale;
+        float centerZ = (bz + 0.5f) * blockScale;
+
+        _targetPosition = new Vector3(centerX, centerY, centerZ);
         _isMoving = true;
     }
 
-    /// <summary>
-    /// A sample "location score" function that sums up
-    /// the block scoring in a 3x3x3 region around (x,y,z),
-    /// plus a bonus if lit.
-    /// </summary>
     private float ComputeLocationScore(int x, int y, int z)
     {
+        // The agent is physically "above" the block (x,y,z). 
+        // For adjacency scoring, we can consider the 3x3x3 around the block below us,
+        // or the actual cell we occupy => up to you.
+
         float totalScore = 0f;
 
-        // Check the 3x3x3 region around (x, y, z)
         for (int dy = -1; dy <= 1; dy++)
         {
             for (int dx = -1; dx <= 1; dx++)
             {
                 for (int dz = -1; dz <= 1; dz++)
                 {
-                    // skip the agent's current position
-                    if (dx == 0 && dy == 0 && dz == 0)
-                        continue;
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    if (dx == 0 && dy == 1 && dz == 0) continue;
 
-                    // skip directly above the agent if (dx==0, dy==1, dz==0)
-                    if (dx == 0 && dy == 1 && dz == 0)
-                        continue;
+                    int xx = x + dx;
+                    int yy = y + dy;
+                    int zz = z + dz;
 
-                    int nx = x + dx;
-                    int ny = y + dy;
-                    int nz = z + dz;
-
-                    BlockType bType = world.GetBlockType(nx, ny, nz);
+                    BlockType bType = world.GetBlockType(xx, yy, zz);
                     totalScore += BlockScoring.GetBlockScore(bType);
                 }
             }
         }
 
-        // Include the agent's own block
-        BlockType center = world.GetBlockType(x, y, z);
-        totalScore += BlockScoring.GetBlockScore(center);
+        // plus the block "under" us
+        totalScore += BlockScoring.GetBlockScore(world.GetBlockType(x, y, z));
 
-        // Bonus if lit
-        if (world.IsLit(x, y, z))
+        // +2 if lit => either check "above" cell or "below" cell
+        // Let's check above cell: (x,y+1,z)
+       /* if (world.IsLit(x, y + 1, z))
         {
             totalScore += 2f;
-        }
+        }*/
 
         return totalScore;
     }
