@@ -1,21 +1,20 @@
-using static MeshUtils;
-
 public static class BlockScoring
 {
-    public static int GetBlockScore(BlockType type)
+    public static float GetBlockScore(MeshUtils.BlockType b)
     {
-        switch (type)
+        switch (b)
         {
-            case BlockType.SAND: return 1;
-            case BlockType.DIRT: return 2;
-            case BlockType.STONE: return 1;
-            case BlockType.GRASSTOP: return 5;
-            case BlockType.GRASSSIDE: return 3;
-            case BlockType.WATER: return 5; // but not standable
-            case BlockType.AIR:
-                return 0; // *** EXPLICIT: Air => 0
-            default:
-                return 0;
+            case MeshUtils.BlockType.STONE: return 0.5f;
+            case MeshUtils.BlockType.DIRT: return 0.5f;
+            case MeshUtils.BlockType.GRASSTOP: return 4f;
+            case MeshUtils.BlockType.GRASSSIDE: return 2.5f;
+            case MeshUtils.BlockType.WATER: return 4f;
+            case MeshUtils.BlockType.SAND: return 0.5f;
+            case MeshUtils.BlockType.DIAMOND: return 0f;
+            case MeshUtils.BlockType.WOOD:
+            case MeshUtils.BlockType.WOODBASE: return 0f;
+            // etc...
+            default: return 0f;
         }
     }
 }

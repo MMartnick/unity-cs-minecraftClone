@@ -2,18 +2,13 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
-using static MeshUtils;
+using System.Collections.Generic;
 
 public class ResourceAgent : Agent
 {
     [Header("World Reference")]
     public World world;
-
-    // The agent’s position in block coordinates,
-    // but note that we interpret (gridX, gridY, gridZ) 
-    // as the block "underneath" the agent,
-    // and physically the agent is in the air cell just above it.
-    private int gridX, gridY, gridZ;
+    public GameObject seedPrefab;
 
     [Tooltip("If each block is 1 meter, set blockScale=1.")]
     public float blockScale = 1f;
@@ -27,14 +22,26 @@ public class ResourceAgent : Agent
     private Vector3 _targetPosition;
     private bool _isMoving = false;
 
-    private int stepsSinceLastMove = 0;
+    private int gridX, gridY, gridZ;  // topmost solid block under agent
     private (int x, int y, int z) lastPos;
+    private int stepsSinceLastMove = 0;
+
+    // Seeds / planting
+    private HashSet<Vector2Int> plantedLocations = new HashSet<Vector2Int>();
+    private float bestLocationValue = 0f;
+
+    // static counters
+    [SerializeField] private static int globalStepCount = 0;
+    [SerializeField] private static int episodeCount = 0;
+    [SerializeField] private static int totalSeedsPlanted = 0;
+
+    // Lower threshold from 20 -> 15 for easier planting
+    private float plantingThreshold = 15f;
 
     public override void Initialize()
     {
+        // Optionally: randomize spawn once here
         RandomizeSpawn();
-        // Place agent physically above the block at (gridX, gridY, gridZ).
-        // The agent is in the air cell => "ny+1" in local coords
         SetAgentAboveBlock(gridX, gridY, gridZ);
         transform.position = _targetPosition;
 
@@ -42,25 +49,49 @@ public class ResourceAgent : Agent
         stepsSinceLastMove = 0;
     }
 
+    public override void OnEpisodeBegin()
+    {
+        // Re-randomize spawn each episode now
+        if (world != null)
+            world.ResetEnvironment();
+
+        // Place agent at same coords
+        SetAgentAboveBlock(gridX, gridY, gridZ);
+        transform.position = _targetPosition;
+
+        // Reset counters
+        plantedLocations.Clear();
+        bestLocationValue = 0f;
+        lastPos = (gridX, gridY, gridZ);
+        stepsSinceLastMove = 0;
+        episodeCount++;
+    }
+
+    /// <summary>
+    /// Randomly pick X,Z, then find the top surface.  
+    /// If invalid, fallback to (25,25,25).
+    /// </summary>
     private void RandomizeSpawn()
     {
-        // measure total block extents
-        int totalX = (World.worldDimensions.x + World.extraWorldDimensions.x)
-                     * World.chunkDimensions.x;
-        int totalZ = (World.worldDimensions.z + World.extraWorldDimensions.z)
-                     * World.chunkDimensions.z;
+        int totalX = (World.worldDimensions.x + World.extraWorldDimensions.x) * World.chunkDimensions.x;
+        int totalZ = (World.worldDimensions.z + World.extraWorldDimensions.z) * World.chunkDimensions.z;
 
-        // pick random x,z, then pick y=some ground or 0
-        gridX = Random.Range(0, totalX / 2);
-        gridZ = Random.Range(0, totalZ / 2);
-        gridY = 25; // or find actual ground
+        int randX = Random.Range(0, totalX / 2);
+        int randZ = Random.Range(0, totalZ / 2);
 
-        // ensure in bounds
-        if (!world.InBounds(gridX, gridY, gridZ))
+        int topY = FindTopSurface(randX, randZ);
+        if (topY < 0)
         {
+            // fallback
             gridX = 25;
             gridY = 25;
             gridZ = 25;
+        }
+        else
+        {
+            gridX = randX;
+            gridY = topY;
+            gridZ = randZ;
         }
     }
 
@@ -73,7 +104,6 @@ public class ResourceAgent : Agent
                 _targetPosition,
                 moveSpeed * Time.deltaTime
             );
-
             if (Vector3.Distance(transform.position, _targetPosition) < 0.001f)
             {
                 transform.position = _targetPosition;
@@ -82,66 +112,95 @@ public class ResourceAgent : Agent
         }
     }
 
+    /// <summary>
+    /// Observations about the "topmost" block at (gridX, gridY, gridZ)
+    /// plus neighbors, lighting, slopes, etc.
+    /// </summary>
     public override void CollectObservations(VectorSensor sensor)
     {
-        // The block "under" the agent is at (gridX, gridY, gridZ).
-        // The agent physically is in the cell above it => (gridY+1) in world coords 
-        // but we store "below block coords" in gridY.
-
-        BlockType belowBlock = world.GetBlockType(gridX, gridY, gridZ);
+        MeshUtils.BlockType belowBlock = world.GetBlockType(gridX, gridY, gridZ);
         sensor.AddObservation((int)belowBlock);
 
-        // Light check in the cell the agent physically occupies => i.e. above the block
-        // but we can approximate with "below" or do "y+1"
         bool isLit = world.IsLit(gridX, gridY + 1, gridZ);
         sensor.AddObservation(isLit ? 1 : 0);
 
+        // The agent's "surface" Y
         sensor.AddObservation(gridY);
+
+        float threshold = 20f; // This is just for observations, not the planting threshold
+        float upVal = world.GetValueAt(gridX, gridZ + 1);
+        float downVal = world.GetValueAt(gridX, gridZ - 1);
+        float leftVal = world.GetValueAt(gridX - 1, gridZ);
+        float rightVal = world.GetValueAt(gridX + 1, gridZ);
+
+        sensor.AddObservation(upVal >= threshold ? 1 : 0);
+        sensor.AddObservation(downVal >= threshold ? 1 : 0);
+        sensor.AddObservation(leftVal >= threshold ? 1 : 0);
+        sensor.AddObservation(rightVal >= threshold ? 1 : 0);
+
+        float currentY = transform.position.y;
+        Vector3 aheadPos = transform.position + transform.forward * 1f;
+        Vector3 rightPos = transform.position + transform.right * 1f;
+
+        float aheadY = world.GetTerrainHeight(aheadPos.x, aheadPos.z);
+        float rightY = world.GetTerrainHeight(rightPos.x, rightPos.z);
+
+        sensor.AddObservation(aheadY - currentY);
+        sensor.AddObservation(rightY - currentY);
     }
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // small step cost
+        int moveAction = actions.DiscreteActions[0]; // 0..6
+        int plantAction = actions.DiscreteActions[1]; // 0..1
+
+        // small time penalty
         AddReward(-0.005f);
 
-        if (Time.time < nextMoveTime) return;
-
-        int move = actions.DiscreteActions[0];
-
-        // penalty if agent chooses "stay" = 0
-        if (move == 0)
+        // If not time to move, we still allow the agent to plant
+        if (Time.time < nextMoveTime)
         {
-            AddReward(-0.01f);
+            HandlePlanting(plantAction);
+            return;
         }
 
-        // interpret the 6 possible moves => left,right,forward,back,up,down
-        // Actually we want to choose an "adjacent block" (nx, ny, nz),
-        // Then stand in the air cell above that block => (nx, ny+1, nz).
-        int bx = gridX;
-        int by = gridY;
-        int bz = gridZ;
+        // Movement
+        if (moveAction == 0)
+        {
+            // idle
+            AddReward(-0.001f);
+        }
 
-        switch (move)
+        // We'll interpret agent's requested move in XZ, ignoring Y 
+        int bx = gridX, by = gridY, bz = gridZ;
+        switch (moveAction)
         {
             case 1: bx -= 1; break; // left
             case 2: bx += 1; break; // right
             case 3: bz += 1; break; // forward
             case 4: bz -= 1; break; // backward
-            case 5: by += 1; break; // up
-            case 6: by -= 1; break; // down
+            case 5: by += 1; break; // up   (though we'll override with top surface)
+            case 6: by -= 1; break; // down (though we'll override with top surface)
         }
 
-        // Attempt to stand "above" the block (bx, by, bz).
-        AttemptMoveAboveBlock(bx, by, bz);
+        AttemptMoveAboveBlock(bx, bz);  // ignoring 'by'
 
-        float locationScore = ComputeLocationScore(gridX, gridY, gridZ);
-        AddReward(locationScore);
+        // Check if this new location is the best so far
+        float currentValue = ComputeLocationScore(gridX, gridY, gridZ);
+        if (currentValue > bestLocationValue)
+        {
+            bestLocationValue = currentValue;
+            AddReward(0.1f);
+        }
 
-        // stuck check
+        // Now handle planting
+        HandlePlanting(plantAction);
+
+        // Extended stuck check from 30 -> 200
         if ((gridX, gridY, gridZ) == lastPos)
         {
             stepsSinceLastMove++;
-            if (stepsSinceLastMove > 30)
+            if (stepsSinceLastMove > 200)
             {
                 AddReward(-1f);
                 EndEpisode();
@@ -153,85 +212,161 @@ public class ResourceAgent : Agent
             lastPos = (gridX, gridY, gridZ);
         }
 
+        globalStepCount++;
+        if (globalStepCount % 1000 == 0)
+        {
+            Debug.Log($"Step {globalStepCount} | Episode {episodeCount} | " +
+                      $"CumulativeReward: {GetCumulativeReward():F2} | " +
+                      $"Seeds Planted (this episode): {plantedLocations.Count} | " +
+                      $"Total Seeds Planted: {totalSeedsPlanted}");
+        }
+
         nextMoveTime = Time.time + moveInterval;
+    }
+
+    /// <summary>
+    /// The only way seeds are planted. Must have plantAction == 1 AND locationScore> plantingThreshold (15 by default).
+    /// Otherwise => penalty.
+    /// </summary>
+    private void HandlePlanting(int plantAction)
+    {
+        if (plantAction == 1)
+        {
+            Vector2Int currentPos2D = new Vector2Int(gridX, gridZ);
+
+            // Let's log for debugging
+            float locationScore = ComputeLocationScore(gridX, gridY, gridZ);
+            Debug.Log($"[PLANT ATTEMPT] Pos=({gridX},{gridZ}), Score={locationScore}");
+
+            // Check if already planted
+            if (plantedLocations.Contains(currentPos2D))
+            {
+                // penalty: already planted here
+                AddReward(-0.1f);
+                Debug.Log($"[PLANT ATTEMPT] Already planted here => penalty");
+                return;
+            }
+
+            // Evaluate the location score
+            if (locationScore > plantingThreshold)
+            {
+                // Good planting
+                plantedLocations.Add(currentPos2D);
+                totalSeedsPlanted++;
+
+                float plantingReward = locationScore / plantingThreshold;
+                AddReward(plantingReward);
+
+                // Actually spawn the seed Prefab
+                Vector3 blockCenter = new Vector3(gridX + 0.5f, gridY + 10f, gridZ + 0.5f);
+                Instantiate(seedPrefab, blockCenter, Quaternion.identity);
+
+                // Mark in the World, if needed
+                world.PlantSeedAt(currentPos2D);
+                //Destroy(this);
+
+                Debug.Log($"[PLANT ATTEMPT] SUCCESS => Score={locationScore}, Reward={plantingReward}");
+            }
+            else
+            {
+                // Bad planting => penalty
+                AddReward(-0.2f);
+                Debug.Log($"[PLANT ATTEMPT] BAD => Score={locationScore} <= {plantingThreshold}, penalty");
+            }
+        }
     }
 
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discrete = actionsOut.DiscreteActions;
         discrete[0] = 0;
+        discrete[1] = 0;
+
         if (Input.GetKey(KeyCode.LeftArrow)) discrete[0] = 1;
         if (Input.GetKey(KeyCode.RightArrow)) discrete[0] = 2;
         if (Input.GetKey(KeyCode.UpArrow)) discrete[0] = 3;
         if (Input.GetKey(KeyCode.DownArrow)) discrete[0] = 4;
         if (Input.GetKey(KeyCode.Q)) discrete[0] = 5;
         if (Input.GetKey(KeyCode.E)) discrete[0] = 6;
+
+        if (Input.GetKey(KeyCode.Space))
+            discrete[1] = 1;
     }
 
     /// <summary>
-    /// The agent wants to stand "in the air cell above" the block at (bx,by,bz).
-    /// So we physically set agent coords => (bx, by+1, bz), if valid/in-bounds.
-    /// If that block is water => penalty or skip. If out of bounds => skip. 
+    /// Places the agent "above" the top surface at (bx, bz).
+    /// We ignore "by" from the agent's action and do a new surface lookup.
     /// </summary>
-    private void AttemptMoveAboveBlock(int bx, int by, int bz)
+    private void AttemptMoveAboveBlock(int bx, int bz)
     {
-        // first check if (bx,by,bz) is in bounds
-        if (!world.InBounds(bx, by, bz))
+        // 1) Find the top surface for that column
+        int topY = FindTopSurface(bx, bz);
+        if (topY < 0)
         {
             AddReward(-0.1f);
             return;
         }
 
-        BlockType belowBlock = world.GetBlockType(bx, by, bz);
-
-        // if it's water => penalty, but let agent stand in the air above it anyway, if we want
-        // or skip if you want no water moves
-        if (belowBlock == BlockType.WATER)
+        // 2) If that block is water => penalty
+        MeshUtils.BlockType blockType = world.GetBlockType(bx, topY, bz);
+        if (blockType == MeshUtils.BlockType.WATER)
         {
-            AddReward(-2f);
-            // we can keep going or skip
+            AddReward(-30f);
         }
 
-        // The cell the agent physically occupies => (bx, by+1, bz)
-        int topY = by + 1;
-        if (!world.InBounds(bx, topY, bz))
-        {
-            AddReward(-0.1f);
-            return;
-        }
-
-        // finalize agent's new "below block coords"
+        // 3) Update agent coords
         gridX = bx;
-        gridY = by;
+        gridY = topY;
         gridZ = bz;
 
-        // place agent physically at (bx, by+1, bz)
-        Debug.Log($"Agent stands above block=({bx},{by},{bz}) => agentCoord=({bx},{by},{bz}) belowBlock={belowBlock}");
-        SetAgentAboveBlock(bx, by, bz);
+        Debug.Log($"Agent stands above block=({bx},{topY},{bz}) => blockType={blockType}");
+        SetAgentAboveBlock(bx, topY, bz);
     }
 
     /// <summary>
-    /// Sets the agent to the center of the cell "one above" the block at (bx,by,bz).
-    /// That is physically (bx+0.5, (by+1)+0.5, bz+0.5).
+    /// Finds the topmost (highest Y) solid block at (x, z).
+    /// If none found, returns -1.
+    /// </summary>
+    private int FindTopSurface(int x, int z)
+    {
+        int maxY = (World.worldDimensions.y + World.extraWorldDimensions.y) * World.chunkDimensions.y - 1;
+
+        for (int checkY = maxY; checkY >= 0; checkY--)
+        {
+            if (!world.InBounds(x, checkY, z))
+                continue;
+
+            MeshUtils.BlockType b = world.GetBlockType(x, checkY, z);
+            if (b != MeshUtils.BlockType.AIR && b != MeshUtils.BlockType.WATER)
+            {
+                return checkY; // Found topmost solid
+            }
+        }
+        return -1; // no block found
+    }
+
+    /// <summary>
+    /// Actually place the agent physically above (bx, by, bz).
+    /// We add +10 so it's well above, then +1 to stand in the air cell, plus 0.5 centering.
     /// </summary>
     private void SetAgentAboveBlock(int bx, int by, int bz)
     {
+        float offset = 10f;
         float centerX = (bx + 0.5f) * blockScale;
-        float centerY = ((by + 1) + 0.5f) * blockScale;
+        float centerY = (by + 1 + offset + 0.5f) * blockScale;
         float centerZ = (bz + 0.5f) * blockScale;
 
         _targetPosition = new Vector3(centerX, centerY, centerZ);
         _isMoving = true;
     }
 
+    /// <summary>
+    /// Computes a location score for the top block at (x, y, z).
+    /// We sum block scores in a 3x3x3 around it, plus the block itself, plus +2 if lit.
+    /// </summary>
     private float ComputeLocationScore(int x, int y, int z)
     {
-        // The agent is physically "above" the block (x,y,z). 
-        // For adjacency scoring, we can consider the 3x3x3 around the block below us,
-        // or the actual cell we occupy => up to you.
-
         float totalScore = 0f;
-
         for (int dy = -1; dy <= 1; dy++)
         {
             for (int dx = -1; dx <= 1; dx++)
@@ -239,27 +374,20 @@ public class ResourceAgent : Agent
                 for (int dz = -1; dz <= 1; dz++)
                 {
                     if (dx == 0 && dy == 0 && dz == 0) continue;
-                    if (dx == 0 && dy == 1 && dz == 0) continue;
+                    if (!world.InBounds(x + dx, y + dy, z + dz)) continue;
 
-                    int xx = x + dx;
-                    int yy = y + dy;
-                    int zz = z + dz;
-
-                    BlockType bType = world.GetBlockType(xx, yy, zz);
+                    MeshUtils.BlockType bType = world.GetBlockType(x + dx, y + dy, z + dz);
                     totalScore += BlockScoring.GetBlockScore(bType);
                 }
             }
         }
 
-        // plus the block "under" us
-        totalScore += BlockScoring.GetBlockScore(world.GetBlockType(x, y, z));
+        // plus the block under us
+        MeshUtils.BlockType below = world.GetBlockType(x, y, z);
+        totalScore += BlockScoring.GetBlockScore(below);
 
-        // +2 if lit => either check "above" cell or "below" cell
-        // Let's check above cell: (x,y+1,z)
-       /* if (world.IsLit(x, y + 1, z))
-        {
+        if (world.IsLit(x, y + 1, z))
             totalScore += 2f;
-        }*/
 
         return totalScore;
     }

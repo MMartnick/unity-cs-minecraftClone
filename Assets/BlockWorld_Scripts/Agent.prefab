@@ -32,7 +32,7 @@ Transform:
   m_GameObject: {fileID: 6275351738830049284}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 25, y: 20, z: 20}
+  m_LocalPosition: {x: 25, y: 20, z: -10}
   m_LocalScale: {x: 2, y: 2, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -135,12 +135,12 @@ MonoBehaviour:
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 1
-      BranchSizes: 06000000
+      BranchSizes: 0700000002000000
     VectorActionSize: 
     VectorActionDescriptions: []
-    VectorActionSpaceType: 1
+    VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 82825713076fb8c49ac9277f7730cb7b, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: ae35a07e50a9d964196a78be60239d31, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 0
   m_BehaviorName: ResourceAgent
@@ -166,6 +166,7 @@ MonoBehaviour:
   hasUpgradedFromAgentParameters: 1
   MaxStep: 50
   world: {fileID: 0}
+  seedPrefab: {fileID: 2129037562748846235, guid: 9baac85dac2dcb14588cde3afbdcdb25, type: 3}
   blockScale: 1
   moveInterval: 1
   moveSpeed: 5

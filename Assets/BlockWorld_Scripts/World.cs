@@ -768,4 +768,69 @@ public class World : MonoBehaviour
         return true;
     }
 
+    public void ResetEnvironment()
+    {
+        // Example: if you want to rebuild the world from scratch
+        // or reposition chunks, or simply do nothing.
+        // Possibly call StartCoroutine(BuildWorld()) again, etc.
+        Debug.Log("Resetting environment...");
+    }
+
+    public float GetValueAt(int x, int z)
+    {
+        // Example: If you just want to re-use the old ComputeLocationScore logic,
+        // you can do a simpler approach, e.g. measure the block y-height or block composition.
+        // For demonstration, let’s do an extremely naive: the higher the ground, the higher the value.
+        int topY = 0;
+        for (int y = worldDimensions.y * chunkDimensions.y - 1; y >= 0; y--)
+        {
+            MeshUtils.BlockType b = GetBlockType(x, y, z);
+            if (b != MeshUtils.BlockType.AIR && b != MeshUtils.BlockType.WATER)
+            {
+                topY = y;
+                break;
+            }
+        }
+        // Return "topY" as a rough "value"
+        return topY;
+    }
+
+    public float GetTerrainHeight(float x, float z)
+    {
+        // If you want an approximate integer approach:
+        int xx = Mathf.FloorToInt(x);
+        int zz = Mathf.FloorToInt(z);
+
+        int topY = 0;
+        for (int y = worldDimensions.y * chunkDimensions.y - 1; y >= 0; y--)
+        {
+            MeshUtils.BlockType b = GetBlockType(xx, y, zz);
+            if (b != MeshUtils.BlockType.AIR && b != MeshUtils.BlockType.WATER)
+            {
+                topY = y + 1; // physically above the top block
+                break;
+            }
+        }
+        return topY;
+    }
+
+    public Vector2Int GetGridPosFromWorld(Vector3 worldPos)
+    {
+        // Convert from world-space coords to block coords
+        int bx = Mathf.FloorToInt(worldPos.x / chunkDimensions.x);
+        int bz = Mathf.FloorToInt(worldPos.z / chunkDimensions.z);
+        // or simpler:
+        // int bx = Mathf.RoundToInt(worldPos.x);
+        // int bz = Mathf.RoundToInt(worldPos.z);
+        return new Vector2Int(bx, bz);
+    }
+
+    public void PlantSeedAt(Vector2Int pos)
+    {
+        
+        // Stub: You might set a block to WOOD or place a "planted" marker, etc.
+        Debug.Log($"Planted seed at {pos}");
+    }
+
+
 }
