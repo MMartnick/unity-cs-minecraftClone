@@ -11,9 +11,9 @@ GameObject:
   - component: {fileID: 4393228637342503173}
   - component: {fileID: 1942246131210402381}
   - component: {fileID: 6830128270596081692}
-  - component: {fileID: 4647777854774480218}
   - component: {fileID: 7599003097451010900}
   - component: {fileID: -1417758147761598694}
+  - component: {fileID: 3247764380345367224}
   m_Layer: 0
   m_Name: Seed
   m_TagString: Untagged
@@ -89,27 +89,6 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!135 &4647777854774480218
-SphereCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2129037562748846235}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Radius: 0.5
-  m_Center: {x: 0, y: 0, z: 0}
 --- !u!54 &7599003097451010900
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -153,3 +132,25 @@ MonoBehaviour:
   agentPrefab: {fileID: 6275351738830049284, guid: e9f1e931a5ff1b34680dff4d877c4fe1, type: 3}
   lifetimeMinutes: 1
   growthFactor: 10
+  isGrowing: 0
+--- !u!135 &3247764380345367224
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2129037562748846235}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.5
+  m_Center: {x: 0, y: 0, z: 0}
