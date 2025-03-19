@@ -14,7 +14,7 @@ public class ResourceAgent : Agent
     public float blockScale = 1f;
 
     [Tooltip("Seconds between moves; reduce for faster training.")]
-    public float moveInterval = 1f;
+    public float moveInterval = 30f;
     private float nextMoveTime = 0f;
 
     [Tooltip("Agent moves smoothly to the target position in Update().")]
@@ -263,14 +263,14 @@ public class ResourceAgent : Agent
 
                 // Mark in the World, if needed
                 world.PlantSeedAt(currentPos2D);
-                //Destroy(this);
+                this.enabled = false;
 
                 Debug.Log($"[PLANT ATTEMPT] SUCCESS => Score={locationScore}, Reward={plantingReward}");
             }
             else
             {
                 // Bad planting => penalty
-                AddReward(-0.2f);
+                AddReward(-5f);
                 Debug.Log($"[PLANT ATTEMPT] BAD => Score={locationScore} <= {plantingThreshold}, penalty");
             }
         }

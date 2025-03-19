@@ -67,7 +67,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 41e2ff19055afe04cbb8212cd4fb3516, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -131,8 +131,10 @@ MonoBehaviour:
   world: {fileID: 0}
   agentPrefab: {fileID: 6275351738830049284, guid: e9f1e931a5ff1b34680dff4d877c4fe1, type: 3}
   lifetimeMinutes: 1
-  growthFactor: 10
+  growthFactor: 40
   isGrowing: 0
+  treeMesh: {fileID: -8089699231438940418, guid: ab4d449c6b2490a469dd13ce0c4986dd, type: 3}
+  treeMaterial: {fileID: 2100000, guid: b8d8ab89667a3ea428af590219470e9d, type: 2}
 --- !u!135 &3247764380345367224
 SphereCollider:
   m_ObjectHideFlags: 0
