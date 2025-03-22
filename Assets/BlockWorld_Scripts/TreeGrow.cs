@@ -65,7 +65,7 @@ public class TreeGrow : MonoBehaviour
             yield break;
 
         // 3) Spawn an agent at the top
-        SpawnAgent();
+        //SpawnAgent();
 
         // 4) Finally, destroy this seed/gameObject
         Destroy(gameObject);
@@ -143,9 +143,9 @@ public class TreeGrow : MonoBehaviour
         gameObject.GetComponent<Rigidbody>().freezeRotation = true;
         Vector3 initialScale = transform.localScale;
         Vector3 targetScale = new Vector3(
-            initialScale.x * growthFactor - 5,
+            initialScale.x * growthFactor / 2,
             initialScale.y * growthFactor,
-            initialScale.z * growthFactor - 5
+            initialScale.z * growthFactor /2
         );
 
         float elapsed = 0f;
@@ -158,7 +158,9 @@ public class TreeGrow : MonoBehaviour
             float t = Mathf.Clamp01(elapsed / growSeconds);
 
             float newY = Mathf.Lerp(initialScale.y, targetScale.y, t);
-            transform.localScale = new Vector3(initialScale.x, newY, initialScale.z);
+            float newX = Mathf.Lerp(initialScale.x, targetScale.x, t);
+            float newZ = Mathf.Lerp(initialScale.z, targetScale.z, t);
+            transform.localScale = new Vector3(newX, newY, newZ);
 
             yield return null;
         }

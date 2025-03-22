@@ -364,7 +364,7 @@ public class Chunk : MonoBehaviour
 
         // Check each offset => if open, add shift
         // We'll scale diagonals to avoid over-folding
-        float cornerShift = -1f;    // or -4f if you prefer
+        float cornerShift = -0f;    // or -4f if you prefer
         float diagScale = 0.6f;   // partial weighting to reduce over-fold
 
         foreach (var (nOffset, shiftDir) in axisOffsets)

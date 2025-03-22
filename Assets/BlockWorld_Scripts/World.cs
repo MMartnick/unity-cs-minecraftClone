@@ -627,8 +627,8 @@ public class World : MonoBehaviour
         StartCoroutine(BuildExtraWorld());
 
         // --- NEW: after everything is set up, enable the agent ---
-        //if (agent != null)
-            //agent.SetActive(true);
+        if (agent != null)
+            agent.SetActive(true);
 
     }
 
