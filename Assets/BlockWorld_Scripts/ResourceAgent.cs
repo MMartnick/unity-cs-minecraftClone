@@ -29,6 +29,9 @@ public class ResourceAgent : Agent
     // Seeds / planting
     private HashSet<Vector2Int> plantedLocations = new HashSet<Vector2Int>();
     private float bestLocationValue = 0f;
+    public Material[] possibleMaterials;
+
+    float totalScore;
 
     // Extended to track visited columns for exploration reward
     private HashSet<Vector3Int> visitedPositions = new HashSet<Vector3Int>();
@@ -360,7 +363,17 @@ public class ResourceAgent : Agent
                 AddReward(plantingReward);
 
                 Vector3 blockCenter = new Vector3(gridX + 0.5f, gridY + 0.25f, gridZ + 0.5f);
-                Instantiate(seedPrefab, blockCenter, Quaternion.identity);
+
+                GameObject newSeed = Instantiate(seedPrefab, blockCenter, Quaternion.identity);
+                newSeed.GetComponent<TreeGrow>().growthFactor = totalScore;
+
+                // Get the Renderer component
+                Renderer seedRenderer = newSeed.GetComponent<Renderer>();
+
+                // Choose one of the three materials randomly
+                int index = Random.Range(0, possibleMaterials.Length);
+                seedRenderer.material = possibleMaterials[index];
+
                 world.PlantSeedAt(currentPos2D);
             }
             else
@@ -430,7 +443,7 @@ public class ResourceAgent : Agent
 
     private float ComputeLocationScore(int x, int y, int z)
     {
-        float totalScore = 0f;
+
         for (int dy = -1; dy <= 1; dy++)
         {
             for (int dx = -1; dx <= 1; dx++)

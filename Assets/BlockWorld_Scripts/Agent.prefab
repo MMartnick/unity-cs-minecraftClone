@@ -170,6 +170,10 @@ MonoBehaviour:
   blockScale: 1
   moveInterval: 1
   moveSpeed: 5
+  possibleMaterials:
+  - {fileID: 2100000, guid: 41e2ff19055afe04cbb8212cd4fb3516, type: 2}
+  - {fileID: 2100000, guid: 161556c5201faf249a199088a69ccf6d, type: 2}
+  - {fileID: 2100000, guid: 0413d0b21d0b9604bb15c313909e6822, type: 2}
   scoreThreshold: 15
   stepPenalty: -0.005
   idlePenalty: -0.001

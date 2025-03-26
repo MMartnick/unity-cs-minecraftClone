@@ -19,10 +19,10 @@ public class TreeGrow : MonoBehaviour
 
     [Header("Growth & Lifetime Settings")]
     [Tooltip("How many real-world minutes the tree will take to grow. Then it spawns an agent and destroys itself.")]
-    public float lifetimeMinutes = 15f;
+    public float lifetimeMinutes = 15000f;
 
     [Tooltip("Multiply the tree’s localScale.y by this factor from start to end of growth.")]
-    public float growthFactor = 15f;
+    public float growthFactor;
 
     // We'll wait 0.1s between checks to avoid spamming
     private float settleWaitTime = 0.1f;
@@ -68,7 +68,9 @@ public class TreeGrow : MonoBehaviour
         //SpawnAgent();
 
         // 4) Finally, destroy this seed/gameObject
+        yield return new WaitForSecondsRealtime(600f);  // Wait 10 real-time minutes
         Destroy(gameObject);
+        yield break;
     }
 
     /// <summary>
@@ -143,9 +145,9 @@ public class TreeGrow : MonoBehaviour
         gameObject.GetComponent<Rigidbody>().freezeRotation = true;
         Vector3 initialScale = transform.localScale;
         Vector3 targetScale = new Vector3(
-            initialScale.x * growthFactor / 2,
-            initialScale.y * growthFactor,
-            initialScale.z * growthFactor /2
+            initialScale.x * growthFactor / 50000,
+            initialScale.y * growthFactor / 10000,
+            initialScale.z * growthFactor / 50000    
         );
 
         float elapsed = 0f;
@@ -165,23 +167,6 @@ public class TreeGrow : MonoBehaviour
             yield return null;
         }
         isGrowing = false;
-    }
-
-    /// <summary>
-    /// Spawns a new agent near the "top" of the final grown tree.
-    /// </summary>
-    private void SpawnAgent()
-    {
-        var agent = Object.FindAnyObjectByType<ResourceAgent>();
-
-        float halfHeight = transform.localScale.y * 0.5f;
-        float spawnY = transform.position.y + halfHeight + 1f; // +1 offset
-        Vector3 spawnPos = new Vector3(transform.position.x, spawnY, transform.position.z);
-
-        agent.enabled = true;
-        agent.transform.position = spawnPos;
-
-        Debug.Log($"[TreeGrow] Spawned agent at {spawnPos} after full growth.");
     }
 
     /// <summary>
