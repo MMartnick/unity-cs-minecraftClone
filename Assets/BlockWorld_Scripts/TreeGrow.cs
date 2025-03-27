@@ -68,9 +68,10 @@ public class TreeGrow : MonoBehaviour
         //SpawnAgent();
 
         // 4) Finally, destroy this seed/gameObject
-        yield return new WaitForSecondsRealtime(600f);  // Wait 10 real-time minutes
+        yield return new WaitForSecondsRealtime(600f);  // 600 seconds = 10 minutes
         Destroy(gameObject);
         yield break;
+
     }
 
     /// <summary>
@@ -132,12 +133,6 @@ public class TreeGrow : MonoBehaviour
     /// </summary>
     private IEnumerator GrowOverTime(float growSeconds)
     {
-        // **Swap to the tree mesh**
-        /*MeshFilter meshFilter = GetComponent<MeshFilter>();
-        if (meshFilter != null && treeMesh != null)
-        {
-            meshFilter.sharedMesh = treeMesh;
-        }*/
         isGrowing = true;
         gameObject.AddComponent<BoxCollider>();
         Destroy(gameObject.GetComponent<SphereCollider>());
@@ -145,9 +140,9 @@ public class TreeGrow : MonoBehaviour
         gameObject.GetComponent<Rigidbody>().freezeRotation = true;
         Vector3 initialScale = transform.localScale;
         Vector3 targetScale = new Vector3(
-            initialScale.x * growthFactor / 50000,
-            initialScale.y * growthFactor / 10000,
-            initialScale.z * growthFactor / 50000    
+            initialScale.x * growthFactor / 10,
+            initialScale.y * growthFactor ,
+            initialScale.z * growthFactor / 10 
         );
 
         float elapsed = 0f;

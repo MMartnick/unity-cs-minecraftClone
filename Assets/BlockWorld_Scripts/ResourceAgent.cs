@@ -31,7 +31,7 @@ public class ResourceAgent : Agent
     private float bestLocationValue = 0f;
     public Material[] possibleMaterials;
 
-    float totalScore;
+    float localScore;
 
     // Extended to track visited columns for exploration reward
     private HashSet<Vector3Int> visitedPositions = new HashSet<Vector3Int>();
@@ -47,10 +47,10 @@ public class ResourceAgent : Agent
     [Header("Rewards & Penalties")]
     public float stepPenalty = -0.005f;
     public float idlePenalty = -0.001f;
-    public float invalidMovePenalty = -100.01f;
+    public float invalidMovePenalty = -10.01f;
     public float badPlantPenalty = -5f;
-    public float exploreReward = 0.01f;
-    public float bestLocationBonus = 0.1f;
+    public float exploreReward = 1f;
+    public float bestLocationBonus = 5f;
 
     public override void Initialize()
     {
@@ -285,6 +285,41 @@ public class ResourceAgent : Agent
                 AddReward(invalidMovePenalty);
                 return;
             }
+            // 1) Check the block at the new surface position
+            if (world.GetBlockType(bx, surfaceY, bz) == MeshUtils.BlockType.WATER)
+            {
+                AddReward(invalidMovePenalty);
+                return;
+            }
+
+            //2) Check if the agent is submersed in water
+            //    (If you ONLY want direct adjacency to penalize, not diagonals, do it like this):
+            if (world.GetBlockType(bx + 1, surfaceY, bz) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx - 1, surfaceY, bz) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx, surfaceY, bz + 1) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx, surfaceY, bz - 1) == MeshUtils.BlockType.WATER||
+                world.GetBlockType(bx + 1, surfaceY+1, bz) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx - 1, surfaceY +1, bz) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx, surfaceY +1, bz + 1) == MeshUtils.BlockType.WATER ||
+                world.GetBlockType(bx, surfaceY +1, bz - 1) == MeshUtils.BlockType.WATER||
+                world.GetBlockType(bx, surfaceY + 1, bz) == MeshUtils.BlockType.WATER)
+            {
+                AddReward(invalidMovePenalty);
+                return;
+            }
+
+            // If you need to also penalize any diagonal water, you can add checks for:
+            // (bx ±1, surfaceY, bz ±1), etc.
+
+            // -------------------------------------------------------------------------
+            // If we passed all these checks, we allow the movement.
+            // -------------------------------------------------------------------------
+            // Also check height difference logic, etc. as in your original code:
+            if (surfaceY > gridY + 1)
+            {
+                AddReward(invalidMovePenalty);
+                return;
+            }
 
             // height difference check
             if (surfaceY > gridY + 1)
@@ -365,7 +400,7 @@ public class ResourceAgent : Agent
                 Vector3 blockCenter = new Vector3(gridX + 0.5f, gridY + 0.25f, gridZ + 0.5f);
 
                 GameObject newSeed = Instantiate(seedPrefab, blockCenter, Quaternion.identity);
-                newSeed.GetComponent<TreeGrow>().growthFactor = totalScore;
+                newSeed.GetComponent<TreeGrow>().growthFactor = localScore;
 
                 // Get the Renderer component
                 Renderer seedRenderer = newSeed.GetComponent<Renderer>();
@@ -438,11 +473,12 @@ public class ResourceAgent : Agent
                 return checkY;
             }
         }
-        return -1;
+        return 0;
     }
 
     private float ComputeLocationScore(int x, int y, int z)
     {
+         localScore = 0f;
 
         for (int dy = -1; dy <= 1; dy++)
         {
@@ -456,17 +492,20 @@ public class ResourceAgent : Agent
                     if (!world.InBounds(nx, ny, nz)) continue;
 
                     MeshUtils.BlockType bType = world.GetBlockType(nx, ny, nz);
-                    totalScore += BlockScoring.GetBlockScore(bType);
+                    localScore += BlockScoring.GetBlockScore(bType);
                 }
             }
         }
-        // plus the block under us
+
+        // plus the block at (x,y,z)
         MeshUtils.BlockType below = world.GetBlockType(x, y, z);
-        totalScore += BlockScoring.GetBlockScore(below);
+        localScore += BlockScoring.GetBlockScore(below);
 
+        // bonus for sunlight
         if (world.IsLit(x, y + 1, z))
-            totalScore += 2f;
+            localScore += 2f;
 
-        return totalScore;
+        return localScore;
     }
+
 }

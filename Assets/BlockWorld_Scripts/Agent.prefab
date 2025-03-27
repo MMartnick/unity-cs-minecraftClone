@@ -140,7 +140,7 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 48bc77751ba8db24683ea2f3cf192fa7, type: 3}
+  m_Model: {fileID: 5022602860645237092, guid: fdb06e32d5601d24eb7359bb1f4cec58, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 0
   m_BehaviorName: ResourceAgent
