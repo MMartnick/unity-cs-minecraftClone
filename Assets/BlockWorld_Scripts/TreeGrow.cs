@@ -134,16 +134,11 @@ public class TreeGrow : MonoBehaviour
     private IEnumerator GrowOverTime(float growSeconds)
     {
         isGrowing = true;
-        gameObject.AddComponent<BoxCollider>();
-        Destroy(gameObject.GetComponent<SphereCollider>());
-        gameObject.GetComponent<Rigidbody>().constraints = RigidbodyConstraints.FreezePosition;
-        gameObject.GetComponent<Rigidbody>().freezeRotation = true;
+
+        // Save the starting position and scale
+        Vector3 startPos = transform.position;
         Vector3 initialScale = transform.localScale;
-        Vector3 targetScale = new Vector3(
-            initialScale.x * growthFactor / 10,
-            initialScale.y * growthFactor ,
-            initialScale.z * growthFactor / 10 
-        );
+        Vector3 finalScale = initialScale * (growthFactor / 2f);
 
         float elapsed = 0f;
         while (elapsed < growSeconds)
@@ -154,15 +149,30 @@ public class TreeGrow : MonoBehaviour
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / growSeconds);
 
-            float newY = Mathf.Lerp(initialScale.y, targetScale.y, t);
-            float newX = Mathf.Lerp(initialScale.x, targetScale.x, t);
-            float newZ = Mathf.Lerp(initialScale.z, targetScale.z, t);
-            transform.localScale = new Vector3(newX, newY, newZ);
+            // Compute new scale
+            Vector3 oldScale = transform.localScale;
+            Vector3 newScale = Vector3.Lerp(initialScale, finalScale, t);
+            transform.localScale = newScale;
+
+            // Because pivot is in the center, half of the difference in height 
+            // would go downward. We shift the object up by half of that difference.
+            float oldY = oldScale.y;
+            float newY = newScale.y;
+            float diffY = newY - oldY;
+            float upwardShift = diffY * 0.5f;  // half the difference
+
+            // Adjust position to keep the bottom in place
+            // (Assuming Y is your up-axis)
+            transform.position += new Vector3(0, upwardShift/50, 0);
 
             yield return null;
         }
+
+        // Optionally snap final scale:
+        transform.localScale = finalScale;
         isGrowing = false;
     }
+
 
     /// <summary>
     /// If this seed collides with another seed that is below it, we destroy THIS seed.

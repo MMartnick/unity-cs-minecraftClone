@@ -42,12 +42,12 @@ public class ResourceAgent : Agent
     [SerializeField] private static int totalSeedsPlanted = 0;
 
     [Header("Scoring Threshold")]
-    public float scoreThreshold = 15f;  // For planting
+    public float scoreThreshold = 50f;  // For planting
 
     [Header("Rewards & Penalties")]
     public float stepPenalty = -0.005f;
     public float idlePenalty = -0.001f;
-    public float invalidMovePenalty = -10.01f;
+    public float invalidMovePenalty = -0.01f;
     public float badPlantPenalty = -5f;
     public float exploreReward = 1f;
     public float bestLocationBonus = 5f;
@@ -461,7 +461,7 @@ public class ResourceAgent : Agent
 
     private int FindTopSurface(int x, int z)
     {
-        int maxY = (World.worldDimensions.y + World.extraWorldDimensions.y) * World.chunkDimensions.y - 1;
+        int maxY = (World.worldDimensions.y + World.extraWorldDimensions.y) * World.chunkDimensions.y +1;
         for (int checkY = maxY; checkY >= 0; checkY--)
         {
             if (!world.InBounds(x, checkY, z))

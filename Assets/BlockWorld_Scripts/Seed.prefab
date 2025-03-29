@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 6830128270596081692}
   - component: {fileID: 7599003097451010900}
   - component: {fileID: -1417758147761598694}
-  - component: {fileID: 3247764380345367224}
+  - component: {fileID: 4013568998186853935}
   m_Layer: 0
   m_Name: Seed
   m_TagString: Untagged
@@ -31,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 21.445938, y: 25.281052, z: 26.965858}
-  m_LocalScale: {x: 0.25, y: 0.25, z: 0.25}
+  m_LocalScale: {x: 5, y: 5, z: 5}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -43,7 +43,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2129037562748846235}
-  m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+  m_Mesh: {fileID: -8089699231438940418, guid: ab4d449c6b2490a469dd13ce0c4986dd, type: 3}
 --- !u!23 &6830128270596081692
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -112,7 +112,7 @@ Rigidbody:
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
   m_UseGravity: 1
-  m_IsKinematic: 0
+  m_IsKinematic: 1
   m_Interpolate: 0
   m_Constraints: 112
   m_CollisionDetection: 0
@@ -129,14 +129,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   world: {fileID: 0}
-  agentPrefab: {fileID: 6275351738830049284, guid: e9f1e931a5ff1b34680dff4d877c4fe1, type: 3}
   lifetimeMinutes: 1
   growthFactor: 40
   isGrowing: 0
   treeMesh: {fileID: -8089699231438940418, guid: ab4d449c6b2490a469dd13ce0c4986dd, type: 3}
   treeMaterial: {fileID: 2100000, guid: b8d8ab89667a3ea428af590219470e9d, type: 2}
---- !u!135 &3247764380345367224
-SphereCollider:
+--- !u!136 &4013568998186853935
+CapsuleCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -153,6 +152,8 @@ SphereCollider:
   m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
-  serializedVersion: 3
-  m_Radius: 0.5
-  m_Center: {x: 0, y: 0, z: 0}
+  serializedVersion: 2
+  m_Radius: 0.004722105
+  m_Height: 0.020006008
+  m_Direction: 1
+  m_Center: {x: 0.000031135045, y: 0.000008734409, z: -0.000057300087}
