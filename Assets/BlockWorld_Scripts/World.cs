@@ -27,8 +27,8 @@ public struct PerlinSettings
 
 public class World : MonoBehaviour
 {
-    public static Vector3Int worldDimensions = new Vector3Int(5, 5, 5);
-    public static Vector3Int extraWorldDimensions = new Vector3Int(5, 5, 5);
+    public static Vector3Int worldDimensions = new Vector3Int(5,5,5);
+    public static Vector3Int extraWorldDimensions = new Vector3Int(2, 2, 2);
     public static Vector3Int chunkDimensions = new Vector3Int(10, 10, 10);
     public bool loadFromFile = false;
     public GameObject chunkPrefab;
@@ -62,7 +62,7 @@ public class World : MonoBehaviour
     public Dictionary<Vector3Int, Chunk> chunks = new Dictionary<Vector3Int, Chunk>();
 
     Vector3Int lastBuildPosition;
-    int drawRadius = 30;
+    int drawRadius = 50;
 
     Queue<IEnumerator> buildQueue = new Queue<IEnumerator>();
 
@@ -141,7 +141,6 @@ public class World : MonoBehaviour
         }
 
         fpc.transform.position = new Vector3(wd.fpcX, wd.fpcY, wd.fpcZ);
-        //agent.transform.position = new Vector3(wd.fpcX, wd.fpcY, wd.fpcZ);
 
 
         mCamera.SetActive(false);
@@ -434,6 +433,8 @@ public class World : MonoBehaviour
 
                 RedrawChunk(thisChunk);
             }
+
+            UpdateWorld();
         }
     }
 

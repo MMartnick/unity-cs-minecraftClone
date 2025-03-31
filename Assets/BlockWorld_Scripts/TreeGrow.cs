@@ -34,6 +34,12 @@ public class TreeGrow : MonoBehaviour
 
     private IEnumerator Start()
     {
+        if(growthFactor < 0)
+        {
+            Destroy(this);
+        }
+
+
         // If world is not assigned in Inspector, try a fallback (Unity 2023.1+)
         if (world == null)
         {
@@ -138,7 +144,7 @@ public class TreeGrow : MonoBehaviour
         // Save the starting position and scale
         Vector3 startPos = transform.position;
         Vector3 initialScale = transform.localScale;
-        Vector3 finalScale = initialScale * (growthFactor / 2f);
+        Vector3 finalScale = initialScale * (1f * growthFactor);
 
         float elapsed = 0f;
         while (elapsed < growSeconds)
@@ -163,7 +169,7 @@ public class TreeGrow : MonoBehaviour
 
             // Adjust position to keep the bottom in place
             // (Assuming Y is your up-axis)
-            transform.position += new Vector3(0, upwardShift/50, 0);
+            transform.position += new Vector3(0, upwardShift / 50, 0);
 
             yield return null;
         }

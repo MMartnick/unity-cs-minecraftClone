@@ -554,8 +554,8 @@ public class Chunk : MonoBehaviour
 
         // With cornerShift=0, the block corners remain exactly in place
         // unless it's water offset. That yields a truly "seamless" terrain.
-        float cornerShift = -0.25f;
-        float diagScale = 0.75f; // not used if cornerShift=0, but left for clarity
+        float cornerShift = -0.75f;
+        float diagScale = 0.25f; // not used if cornerShift=0, but left for clarity
 
         // Axis neighbors
         foreach (var (nOffset, shiftDir) in axisOffsets)
