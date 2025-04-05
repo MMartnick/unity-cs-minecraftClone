@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Mathematics;
 using Unity.Collections;
@@ -20,14 +20,14 @@ public class Chunk : MonoBehaviour
 
     public Vector3 location;
 
-    // The flattened chunk data
+    // Flattened chunk data
     public MeshUtils.BlockType[] chunkData;
     public MeshUtils.BlockType[] healthData;
 
     public Block[,,] blocks;
     public MeshRenderer meshRenderer;
 
-    // Corner cache for smoothing
+    // Corner cache for smoothing/folding
     private Dictionary<(int x, int y, int z, int cornerIndex), Vector3> cornerCache
         = new Dictionary<(int, int, int, int), Vector3>();
 
@@ -64,7 +64,6 @@ public class Chunk : MonoBehaviour
                 World.surfaceSettings.heightScale,
                 World.surfaceSettings.heightOffset
             );
-
             int sandHeight = (int)MeshUtils.fBM(
                 x, z,
                 World.sandSettings.octaves,
@@ -72,7 +71,6 @@ public class Chunk : MonoBehaviour
                 World.sandSettings.heightScale,
                 World.sandSettings.heightOffset
             );
-
             int stoneHeight = (int)MeshUtils.fBM(
                 x, z,
                 World.stoneSettings.octaves,
@@ -80,7 +78,6 @@ public class Chunk : MonoBehaviour
                 World.stoneSettings.heightScale,
                 World.stoneSettings.heightOffset
             );
-
             int diamondTHeight = (int)MeshUtils.fBM(
                 x, z,
                 World.diamondTSettings.octaves,
@@ -88,7 +85,6 @@ public class Chunk : MonoBehaviour
                 World.diamondTSettings.heightScale,
                 World.diamondTSettings.heightOffset
             );
-
             int diamondBHeight = (int)MeshUtils.fBM(
                 x, z,
                 World.diamondBSettings.octaves,
@@ -125,7 +121,7 @@ public class Chunk : MonoBehaviour
             // Grass top
             if (surfaceHeight == y)
             {
-                cData[i] = MeshUtils.BlockType.GRASSSIDE; // or GRASSTOP if you prefer
+                cData[i] = MeshUtils.BlockType.GRASSSIDE; // or GRASSTOP
             }
             else if (y < diamondTHeight && y > diamondBHeight &&
                      random.NextFloat(1) <= World.diamondTSettings.probability)
@@ -161,18 +157,19 @@ public class Chunk : MonoBehaviour
         chunkData = new MeshUtils.BlockType[blockCount];
         healthData = new MeshUtils.BlockType[blockCount];
 
-        NativeArray<MeshUtils.BlockType> blockTypes = new NativeArray<MeshUtils.BlockType>(chunkData, Allocator.Persistent);
-        NativeArray<MeshUtils.BlockType> healthTypes = new NativeArray<MeshUtils.BlockType>(healthData, Allocator.Persistent);
+        NativeArray<MeshUtils.BlockType> blockTypes
+            = new NativeArray<MeshUtils.BlockType>(chunkData, Allocator.Persistent);
+        NativeArray<MeshUtils.BlockType> healthTypes
+            = new NativeArray<MeshUtils.BlockType>(healthData, Allocator.Persistent);
 
-        var randomArray = new Unity.Mathematics.Random[blockCount];
+        var randArray = new Unity.Mathematics.Random[blockCount];
         var seed = new System.Random();
+        for (int i = 0; i < blockCount; i++)
+            randArray[i] = new Unity.Mathematics.Random((uint)seed.Next());
 
-        for (int i = 0; i < blockCount; ++i)
-            randomArray[i] = new Unity.Mathematics.Random((uint)seed.Next());
+        RandomArray = new NativeArray<Unity.Mathematics.Random>(randArray, Allocator.Persistent);
 
-        RandomArray = new NativeArray<Unity.Mathematics.Random>(randomArray, Allocator.Persistent);
-
-        calculateBlockTypes = new CalculateBlockTypes()
+        calculateBlockTypes = new CalculateBlockTypes
         {
             cData = blockTypes,
             hData = healthTypes,
@@ -197,24 +194,13 @@ public class Chunk : MonoBehaviour
     // 2) CREATE THE CHUNK IN MULTIPLE PASSES
     ////////////////////////////////////////////////////////////////////////////////
 
-    /// <summary>
-    /// The order in which we want to build each block type,
-    /// so each pass conforms to the corners from the previous passes.
-    /// 
-    ///  - pass #1: Stone-like blocks (Stone, Bedrock, Diamond)
-    ///  - pass #2: Dirt
-    ///  - pass #3: Sand
-    ///  - pass #4: GrassSide
-    ///  - pass #5: GrassTop
-    ///  - pass #6: Water
-    /// </summary>
     private static readonly MeshUtils.BlockType[][] Passes = new MeshUtils.BlockType[][]
     {
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.BEDROCK, MeshUtils.BlockType.STONE, MeshUtils.BlockType.DIAMOND },
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.DIRT },
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.SAND },
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.GRASSSIDE },
-        new MeshUtils.BlockType[]{ MeshUtils.BlockType.GRASSTOP }, // if you have a distinct GRASSTOP
+        new MeshUtils.BlockType[]{ MeshUtils.BlockType.GRASSTOP },
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.WATER }
     };
 
@@ -225,57 +211,48 @@ public class Chunk : MonoBehaviour
         height = (int)dimensions.y;
         depth = (int)dimensions.z;
 
-        // Clear the corner cache each time we rebuild
         cornerCache.Clear();
 
-        MeshFilter mf = this.gameObject.AddComponent<MeshFilter>();
-        MeshRenderer mr = this.gameObject.AddComponent<MeshRenderer>();
+        MeshFilter mf = gameObject.AddComponent<MeshFilter>();
+        MeshRenderer mr = gameObject.AddComponent<MeshRenderer>();
         meshRenderer = mr;
         mr.material = atlas;
+
         blocks = new Block[width, height, depth];
 
         if (rebuildBlocks)
             BuildChunk();
 
-        // We'll store combined meshes for "solid" blocks and for "water" blocks separately
         var solidMeshes = new List<Mesh>();
         var waterMeshes = new List<Mesh>();
 
-        // We do multiple passes in a specific order
+        // Build passes in order
         for (int passIndex = 0; passIndex < Passes.Length; passIndex++)
         {
-            MeshUtils.BlockType[] passTypes = Passes[passIndex];
+            var passTypes = Passes[passIndex];
             bool isWaterPass = (passTypes.Length == 1 && passTypes[0] == MeshUtils.BlockType.WATER);
 
-            // Gather block meshes for this pass
             var passMeshes = BuildBlockMeshesForTypes(passTypes);
-
-            // Add them to either solid list or water list
             if (!isWaterPass)
-            {
                 solidMeshes.AddRange(passMeshes);
-            }
             else
-            {
                 waterMeshes.AddRange(passMeshes);
-            }
         }
 
-        // Combine SOLID passes
+        // Combine solids
         Mesh terrainMesh = CombineMeshes(solidMeshes,
-            "Terrain_" + location.x + "_" + location.y + "_" + location.z);
+            $"Terrain_{location.x}_{location.y}_{location.z}");
         mf.mesh = terrainMesh;
 
-        MeshCollider collider = this.gameObject.AddComponent<MeshCollider>();
+        MeshCollider collider = gameObject.AddComponent<MeshCollider>();
         collider.sharedMesh = mf.mesh;
 
-        // Combine WATER pass (if any)
+        // Combine water
         if (waterMeshes.Count > 0)
         {
             Mesh waterMesh = CombineMeshes(waterMeshes,
-                "Water_" + location.x + "_" + location.y + "_" + location.z);
+                $"Water_{location.x}_{location.y}_{location.z}");
 
-            // Create child object for water
             GameObject waterGO = new GameObject("WaterGO");
             waterGO.transform.SetParent(this.transform, false);
 
@@ -287,11 +264,6 @@ public class Chunk : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Loop over all blocks, and if the block's type is in `typesWanted`,
-    /// create the block, build its mesh, and store it in a temporary list.
-    /// Return all resulting meshes for that pass.
-    /// </summary>
     private List<Mesh> BuildBlockMeshesForTypes(MeshUtils.BlockType[] typesWanted)
     {
         var passMeshes = new List<Mesh>();
@@ -302,12 +274,12 @@ public class Chunk : MonoBehaviour
             {
                 for (int x = 0; x < width; x++)
                 {
-                    var index = x + width * (y + depth * z);
+                    int index = x + width * (y + depth * z);
                     var bType = chunkData[index];
                     if (!IsBlockInList(bType, typesWanted))
-                        continue; // skip if block not in this pass
+                        continue;
 
-                    // Create the block => automatically calls smoothing => builds a mesh
+                    // Create the block => builds a mesh
                     blocks[x, y, z] = new Block(
                         new Vector3(x, y, z) + location,
                         bType,
@@ -315,7 +287,6 @@ public class Chunk : MonoBehaviour
                         healthData[index]
                     );
 
-                    // If there's a valid mesh, add to passMeshes
                     if (blocks[x, y, z].mesh != null)
                     {
                         passMeshes.Add(blocks[x, y, z].mesh);
@@ -336,8 +307,7 @@ public class Chunk : MonoBehaviour
     }
 
     /// <summary>
-    /// Uses your existing job-based approach to combine a list of individual block meshes
-    /// into a single combined Mesh. Returns that merged Mesh.
+    /// Combine a list of individual meshes into a single mesh.
     /// </summary>
     private Mesh CombineMeshes(List<Mesh> inputMeshes, string newMeshName)
     {
@@ -357,10 +327,10 @@ public class Chunk : MonoBehaviour
             triStart = new NativeArray<int>(meshCount, Allocator.TempJob)
         };
 
-        // Calculate total vertex/index counts
-        int m = 0;
-        foreach (var mesh in inputMeshes)
+        // Tally vertex/index counts
+        for (int m = 0; m < meshCount; m++)
         {
+            var mesh = inputMeshes[m];
             int vCount = mesh.vertexCount;
             int iCount = (int)mesh.GetIndexCount(0);
 
@@ -369,16 +339,13 @@ public class Chunk : MonoBehaviour
 
             vertexStart += vCount;
             triStart += iCount;
-            m++;
         }
 
         jobs.meshData = Mesh.AcquireReadOnlyMeshData(inputMeshes);
 
-        // Create a single output mesh data
         var outputMeshData = Mesh.AllocateWritableMeshData(1);
         jobs.outputMesh = outputMeshData[0];
 
-        // Setup the vertex/index buffer sizes
         jobs.outputMesh.SetIndexBufferParams(triStart, IndexFormat.UInt32);
         jobs.outputMesh.SetVertexBufferParams(vertexStart,
             new VertexAttributeDescriptor(VertexAttribute.Position),
@@ -424,291 +391,218 @@ public class Chunk : MonoBehaviour
             int vCount = data.vertexCount;
             int vStart = vertexStart[index];
 
-            // Read source mesh data
+            // read source mesh data
             var verts = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-            var normals = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            var norms = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var uvs = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var uvs2 = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
 
             data.GetVertices(verts.Reinterpret<Vector3>());
-            data.GetNormals(normals.Reinterpret<Vector3>());
+            data.GetNormals(norms.Reinterpret<Vector3>());
             data.GetUVs(0, uvs.Reinterpret<Vector3>());
             data.GetUVs(1, uvs2.Reinterpret<Vector3>());
 
-            var outputVerts = outputMesh.GetVertexData<Vector3>(0);
-            var outputNormals = outputMesh.GetVertexData<Vector3>(1);
-            var outputUVs = outputMesh.GetVertexData<Vector3>(2);
-            var outputUVs2 = outputMesh.GetVertexData<Vector3>(3);
+            var dstVerts = outputMesh.GetVertexData<Vector3>(0);
+            var dstNorms = outputMesh.GetVertexData<Vector3>(1);
+            var dstUVs = outputMesh.GetVertexData<Vector3>(2);
+            var dstUVs2 = outputMesh.GetVertexData<Vector3>(3);
 
             for (int i = 0; i < vCount; i++)
             {
-                outputVerts[vStart + i] = verts[i];
-                outputNormals[vStart + i] = normals[i];
-                outputUVs[vStart + i] = uvs[i];
-                outputUVs2[vStart + i] = uvs2[i];
+                dstVerts[vStart + i] = verts[i];
+                dstNorms[vStart + i] = norms[i];
+                dstUVs[vStart + i] = uvs[i];
+                dstUVs2[vStart + i] = uvs2[i];
             }
 
             verts.Dispose();
-            normals.Dispose();
+            norms.Dispose();
             uvs.Dispose();
             uvs2.Dispose();
 
             int tStart = triStart[index];
             int tCount = data.GetSubMesh(0).indexCount;
-            var outputTris = outputMesh.GetIndexData<int>();
+            var dstTris = outputMesh.GetIndexData<int>();
 
+            // copy indices
             if (data.indexFormat == IndexFormat.UInt16)
             {
-                var tris = data.GetIndexData<ushort>();
-                for (int i = 0; i < tCount; i++)
-                {
-                    outputTris[tStart + i] = vStart + tris[i];
-                }
+                var sTris = data.GetIndexData<ushort>();
+                for (int t = 0; t < tCount; t++)
+                    dstTris[tStart + t] = vStart + sTris[t];
             }
             else
             {
-                var tris = data.GetIndexData<int>();
-                for (int i = 0; i < tCount; i++)
-                {
-                    outputTris[tStart + i] = vStart + tris[i];
-                }
+                var sTris = data.GetIndexData<int>();
+                for (int t = 0; t < tCount; t++)
+                    dstTris[tStart + t] = vStart + sTris[t];
             }
         }
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // 3) CORNER SMOOTHING, NO RANDOM SHIFT, WATER NUDGE ONLY
+    // 3) CORNER FOLDING: SHIFT CORNER FOR >=2 OPEN (AIR) SIDES,
+    //    AVERAGING SHIFT SO TOTAL REMAINS ~0.5
     ////////////////////////////////////////////////////////////////////////////////
-
-    /// <summary>
-    /// We compute the corner with smoothing if needed. Solids have NO random shift,
-    /// so each block lines up seamlessly. Water is nudged down a bit (-0.01f) to avoid
-    /// z-fighting.
-    /// </summary>
     public Vector3 GetOrComputeCorner(int bx, int by, int bz,
                                       int cornerIndex,
                                       MeshUtils.BlockType blockType)
     {
         var key = (bx, by, bz, cornerIndex);
-
         if (cornerCache.TryGetValue(key, out Vector3 cachedPos))
         {
             return cachedPos;
         }
 
-        // If not found, compute the smoothed corner
-        Vector3 blockOrigin = new Vector3(bx + location.x, by + location.y, bz + location.z);
-        Vector3 cornerPos = ComputeCornerPosition(blockOrigin, blockType, bx, by, bz, cornerIndex);
+        Vector3 baseCorner = GetBaseCorner(new Vector3(bx, by, bz), cornerIndex);
 
-        // Only water gets a small downward offset (for z-fight safety).
+        // If it's water => small nudge, but do not treat it as open for folding
         if (blockType == MeshUtils.BlockType.WATER)
         {
-            cornerPos.y -= 0.05f;
-        }
-        if (blockType == MeshUtils.BlockType.STONE)
-        {
-            cornerPos.y -= 0.01f;
-            cornerPos.x += 0.05f;
-            cornerPos.z += 0.05f;
-        }
-        if (blockType == MeshUtils.BlockType.DIRT)
-        {
-            cornerPos.y -= 0.03f;
-            cornerPos.x += 0.04f;
-            cornerPos.z += 0.04f;
-        }
-        if (blockType == MeshUtils.BlockType.GRASSSIDE)
-        {
-            cornerPos.y -= 0.02f;
-            cornerPos.x += 0.03f;
-            cornerPos.z += 0.03f;
-        }
-        if (blockType == MeshUtils.BlockType.GRASSTOP)
-        {
-            cornerPos.y -= 0.02f;
-            cornerPos.x += 0.02f;
-            cornerPos.z += 0.02f;
-        }
-        if (blockType == MeshUtils.BlockType.SAND)
-        {
-            cornerPos.y -= 0.04f;
+            baseCorner.y -= 0.02f;
+            baseCorner.x += 0.02f;
+            baseCorner.z += 0.02f;
         }
 
-        cornerCache[key] = cornerPos;
-        return cornerPos;
-    }
+        // (Optional) Stone offset removed or commented out:
+        // if (blockType == MeshUtils.BlockType.STONE)
+        // {
+        //     baseCorner.x += 0.05f;
+        //     baseCorner.y += 0.05f;
+        //     baseCorner.z += 0.05f;
+        // }
 
-    private Vector3 ComputeCornerPosition(Vector3 blockOrigin,
-                                          MeshUtils.BlockType blockType,
-                                          int bx, int by, int bz,
-                                          int cornerIndex)
-    {
-        // Start with the base corner
-        Vector3 baseCorner = GetBaseCorner(blockOrigin, cornerIndex);
-
-        // Gather open directions
-        List<Vector3> shifts = new List<Vector3>();
-
-        var axisOffsets = GetAxisOffsets(bx, by, bz, cornerIndex);
-        var diagOffsets = GetPlaneDiagonalOffset(bx, by, bz, cornerIndex);
-
-        // With cornerShift=0, the block corners remain exactly in place
-        // unless it's water offset. That yields a truly "seamless" terrain.
-        float cornerShift = -0.75f;
-        float diagScale = 0.25f; // not used if cornerShift=0, but left for clarity
-
-        // Axis neighbors
-        foreach (var (nOffset, shiftDir) in axisOffsets)
+        // Count how many sides are open (AIR only)
+        var openSides = GetOpenSides(bx, by, bz, cornerIndex);
+        // If at least 2 sides are open => fold corner
+        if (openSides.Count >= 3)
         {
-            if (IsNeighborOpen(blockType, nOffset.x, nOffset.y, nOffset.z))
+            // We'll sum direction vectors, then normalize so total shift is ~0.5
+            Vector3 sumDir = Vector3.zero;
+            foreach (var dir in openSides)
             {
-                // If water => skip vertical shift
-                // But cornerShift=0 means there's no shift anyway, so it won't matter
-                shifts.Add(shiftDir * cornerShift);
+                sumDir += dir;
+            }
+
+            // Avoid zero magnitude
+            float mag = sumDir.magnitude;
+            if (mag > 0.0001f)
+            {
+                // We want a total shift of 0.5 in the *combined* direction
+                Vector3 fold = sumDir.normalized * 0.5f;
+                baseCorner += fold;
             }
         }
 
-        // Diagonal neighbor
-        (Vector3Int dOff, Vector3 diagVec) = diagOffsets;
-        if (IsNeighborOpen(blockType, dOff.x, dOff.y, dOff.z))
-        {
-            Vector3 scaledDiag = diagVec * cornerShift * diagScale;
-            shifts.Add(scaledDiag);
-        }
-
-        if (shifts.Count == 0)
-            return baseCorner;
-
-        // Average all shift vectors
-        Vector3 sum = Vector3.zero;
-        foreach (var s in shifts) sum += s;
-        Vector3 avg = sum / shifts.Count;
-
-        return baseCorner + avg;
-    }
-
-    private Vector3 GetBaseCorner(Vector3 blockOrigin, int cornerIndex)
-    {
-        switch (cornerIndex)
-        {
-            case 0: return blockOrigin + new Vector3(-0.5f, -0.5f, 0.5f);
-            case 1: return blockOrigin + new Vector3(0.5f, -0.5f, 0.5f);
-            case 2: return blockOrigin + new Vector3(0.5f, -0.5f, -0.5f);
-            case 3: return blockOrigin + new Vector3(-0.5f, -0.5f, -0.5f);
-            case 4: return blockOrigin + new Vector3(-0.5f, 0.5f, 0.5f);
-            case 5: return blockOrigin + new Vector3(0.5f, 0.5f, 0.5f);
-            case 6: return blockOrigin + new Vector3(0.5f, 0.5f, -0.5f);
-            case 7: return blockOrigin + new Vector3(-0.5f, 0.5f, -0.5f);
-        }
-        return blockOrigin;
-    }
-
-    private (Vector3Int offset, Vector3 shiftDir)[] GetAxisOffsets(int bx, int by, int bz, int cornerIndex)
-    {
-        switch (cornerIndex)
-        {
-            case 0: // bottom-left-front
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
-                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
-                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
-                };
-            case 1: // bottom-right-front
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
-                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
-                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
-                };
-            case 2: // bottom-right-back
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
-                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
-                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
-                };
-            case 3: // bottom-left-back
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
-                    (new Vector3Int(bx,   by-1, bz),   new Vector3(0, +1, 0)),
-                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
-                };
-            case 4: // top-left-front
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
-                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
-                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
-                };
-            case 5: // top-right-front
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
-                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
-                    (new Vector3Int(bx,   by,   bz+1), new Vector3(0, 0, -1))
-                };
-            case 6: // top-right-back
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx+1, by,   bz),   new Vector3(-1, 0, 0)),
-                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
-                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
-                };
-            case 7: // top-left-back
-                return new (Vector3Int, Vector3)[]
-                {
-                    (new Vector3Int(bx-1, by,   bz),   new Vector3(+1, 0, 0)),
-                    (new Vector3Int(bx,   by+1, bz),   new Vector3(0, -1, 0)),
-                    (new Vector3Int(bx,   by,   bz-1), new Vector3(0, 0, +1))
-                };
-        }
-        return new (Vector3Int, Vector3)[0];
-    }
-
-    private (Vector3Int, Vector3) GetPlaneDiagonalOffset(int bx, int by, int bz, int cornerIndex)
-    {
-        switch (cornerIndex)
-        {
-            case 0: return (new Vector3Int(bx - 1, by, bz + 1), new Vector3(+1, 0, -1));
-            case 1: return (new Vector3Int(bx + 1, by, bz + 1), new Vector3(-1, 0, -1));
-            case 2: return (new Vector3Int(bx + 1, by, bz - 1), new Vector3(-1, 0, +1));
-            case 3: return (new Vector3Int(bx - 1, by, bz - 1), new Vector3(+1, 0, +1));
-            case 4: return (new Vector3Int(bx - 1, by, bz + 1), new Vector3(+1, 0, -1));
-            case 5: return (new Vector3Int(bx + 1, by, bz + 1), new Vector3(-1, 0, -1));
-            case 6: return (new Vector3Int(bx + 1, by, bz - 1), new Vector3(-1, 0, +1));
-            case 7: return (new Vector3Int(bx - 1, by, bz - 1), new Vector3(+1, 0, +1));
-        }
-        return (new Vector3Int(bx, by, bz), Vector3.zero);
+        Vector3 worldCorner = baseCorner + location;
+        cornerCache[key] = worldCorner;
+        return worldCorner;
     }
 
     /// <summary>
-    /// "Open" means we should shift the corner in that direction if cornerShift != 0.
-    /// With cornerShift=0, solids won't shift anyway, but water uses a separate offset.
-    /// - If water, open if neighbor != WATER
-    /// - If a solid, open if neighbor != the same blockType
+    /// Return the local corner position w/o folding
     /// </summary>
-    private bool IsNeighborOpen(MeshUtils.BlockType myType, int nx, int ny, int nz)
+    private Vector3 GetBaseCorner(Vector3 blockPos, int cornerIndex)
     {
-        if (nx < 0 || nx >= width ||
-            ny < 0 || ny >= height ||
-            nz < 0 || nz >= depth)
+        float offset = 0.5f;
+        float bx = blockPos.x, by = blockPos.y, bz = blockPos.z;
+        switch (cornerIndex)
         {
+            case 0: return new Vector3(bx - offset, by - offset, bz + offset);
+            case 1: return new Vector3(bx + offset, by - offset, bz + offset);
+            case 2: return new Vector3(bx + offset, by - offset, bz - offset);
+            case 3: return new Vector3(bx - offset, by - offset, bz - offset);
+            case 4: return new Vector3(bx - offset, by + offset, bz + offset);
+            case 5: return new Vector3(bx + offset, by + offset, bz + offset);
+            case 6: return new Vector3(bx + offset, by + offset, bz - offset);
+            case 7: return new Vector3(bx - offset, by + offset, bz - offset);
+        }
+        return blockPos;
+    }
+
+    /// <summary>
+    /// We check the 3 sides for this corner, and if the neighbor is AIR => we add 
+    /// that side's inward direction to a List. We'll do an average shift from them.
+    /// </summary>
+    private List<Vector3> GetOpenSides(int bx, int by, int bz, int cornerIndex)
+    {
+        List<Vector3> openDirs = new List<Vector3>();
+        var sides = GetCornerSides(cornerIndex);
+
+        foreach (Side s in sides)
+        {
+            if (IsAirNeighbor(bx, by, bz, s))
+            {
+                // add the "inward" direction
+                openDirs.Add(GetSideInwardVector(s));
+            }
+        }
+        return openDirs;
+    }
+
+    /// <summary>
+    /// Returns which sides matter for that corner: 
+    /// e.g. corner=4 => top-left-front => sides={TOP,LEFT,FRONT}
+    /// </summary>
+    private Side[] GetCornerSides(int cIndex)
+    {
+        switch (cIndex)
+        {
+            case 0: return new[] { Side.BOTTOM, Side.LEFT, Side.FRONT };
+            case 1: return new[] { Side.BOTTOM, Side.RIGHT, Side.FRONT };
+            case 2: return new[] { Side.BOTTOM, Side.RIGHT, Side.BACK };
+            case 3: return new[] { Side.BOTTOM, Side.LEFT, Side.BACK };
+            case 4: return new[] { Side.TOP, Side.LEFT, Side.FRONT };
+            case 5: return new[] { Side.TOP, Side.RIGHT, Side.FRONT };
+            case 6: return new[] { Side.TOP, Side.RIGHT, Side.BACK };
+            case 7: return new[] { Side.TOP, Side.LEFT, Side.BACK };
+        }
+        return new Side[0];
+    }
+
+    private bool IsAirNeighbor(int bx, int by, int bz, Side side)
+    {
+        int nx = bx, ny = by, nz = bz;
+        switch (side)
+        {
+            case Side.TOP: ny++; break;
+            case Side.BOTTOM: ny--; break;
+            case Side.LEFT: nx--; break;
+            case Side.RIGHT: nx++; break;
+            case Side.FRONT: nz++; break;
+            case Side.BACK: nz--; break;
+        }
+
+        // if OOB => not air
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth)
             return false;
-        }
 
-        var neighborType = chunkData[nx + width * (ny + depth * nz)];
+        var neighbor = chunkData[nx + width * (ny + depth * nz)];
+        // Now we treat only AIR as open => no water
+        return (neighbor == MeshUtils.BlockType.AIR);
+    }
 
-        if (myType == MeshUtils.BlockType.WATER)
+    private Vector3 GetSideInwardVector(Side s)
+    {
+        switch (s)
         {
-            return (neighborType != MeshUtils.BlockType.WATER);
+            case Side.TOP: return Vector3.down;
+            case Side.BOTTOM: return Vector3.up;
+            case Side.LEFT: return Vector3.right;
+            case Side.RIGHT: return Vector3.left;
+            case Side.FRONT: return Vector3.back;
+            case Side.BACK: return Vector3.forward;
         }
-        else
-        {
-            // No random offset, but we keep the logic
-            // in case cornerShift were > 0 or < 0 in the future
-            return (neighborType != myType);
-        }
+        return Vector3.zero;
+    }
+
+    private enum Side
+    {
+        TOP,
+        BOTTOM,
+        LEFT,
+        RIGHT,
+        FRONT,
+        BACK
     }
 }

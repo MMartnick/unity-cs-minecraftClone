@@ -3,6 +3,8 @@ using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 using System.Collections.Generic;
+using UnityEngine.Rendering;
+using static MeshUtils;
 
 /// <summary>
 /// Agent that spawns on top of the highest solid block plus 1 in Y,
@@ -53,7 +55,7 @@ public class ResourceAgent : Agent
     [SerializeField] private static int totalSeedsPlanted = 0;
 
     [Header("Scoring Threshold")]
-    public float scoreThreshold = 50f;  // For planting
+    public float scoreThreshold =20f;  // For planting
 
     [Header("Rewards & Penalties")]
     public float stepPenalty = -0.005f;
@@ -119,11 +121,11 @@ public class ResourceAgent : Agent
         // If no valid surface found, fallback
         if (topY < 20)
         {
-            int randStartX = UnityEngine.Random.Range(10, 40);
-            int randStartZ = UnityEngine.Random.Range(10, 40);
+            int randStartX = UnityEngine.Random.Range(10, totalX);
+            int randStartZ = UnityEngine.Random.Range(10, totalZ);
 
                 gridX = randStartX;
-                gridY = 30;  // ensure we are above block
+                gridY = 25;  // ensure we are above block
                 gridZ = randStartZ;
         }
         else
@@ -253,11 +255,12 @@ public class ResourceAgent : Agent
     /// </summary>
     private void AttemptMovement(int moveAction)
     {
+        // Copy the agent's current coords (float)
         float bx = gridX;
         float by = gridY;
         float bz = gridZ;
 
-        // Simple discrete movements in block coords
+        // 1) Determine the new coordinate based on the move action
         switch (moveAction)
         {
             case 1: bx -= 1; break;  // Left
@@ -265,66 +268,82 @@ public class ResourceAgent : Agent
             case 3: bz += 1; break;  // Forward
             case 4: bz -= 1; break;  // Back
             case 5: // Up
-                if (CanClimbUp(gridX, gridY, gridZ)) by += 1;
+                if (CanMoveUp(gridX, gridY, gridZ)) by += 1;
                 else { AddReward(invalidMovePenalty); return; }
                 break;
             case 6: // Down
-                if (CanDropDown(gridX, gridY, gridZ)) by -= 1;
+                if (CanMoveDown(gridX, gridY, gridZ)) by -= 1;
                 else { AddReward(invalidMovePenalty); return; }
                 break;
         }
 
-        // If horizontal movement, check bounds, water adjacency, etc.
+
+        // 2) If it’s a horizontal move, do a simple “solid vs. not solid” check
+        //    instead of doing the "FindTopSurface" approach.
         bool isHorizontal = (moveAction >= 1 && moveAction <= 4);
         if (isHorizontal)
         {
-            int totalX = (World.worldDimensions.x + World.extraWorldDimensions.x) * World.chunkDimensions.x;
-            int totalZ = (World.worldDimensions.z + World.extraWorldDimensions.z) * World.chunkDimensions.z;
+            // Round the new coords to int
+            int nx = Mathf.RoundToInt(bx);
+            int ny = Mathf.RoundToInt(by);
+            int nz = Mathf.RoundToInt(bz);
 
             // Bounds check
-            if (bx < 0 || bx >= totalX || bz < 0 || bz >= totalZ)
+            int totalX = (World.worldDimensions.x + World.extraWorldDimensions.x) * World.chunkDimensions.x;
+            int totalZ = (World.worldDimensions.z + World.extraWorldDimensions.z) * World.chunkDimensions.z;
+            if (nx < 0 || nx >= totalX || nz < 0 || nz >= totalZ)
             {
                 AddReward(invalidMovePenalty);
                 return;
             }
 
-            // Find the top surface and add 1 so agent stands above
-            float surfaceY = FindTopSurface((int)bx, (int)bz) + 1;
-            if (surfaceY < 1)
+           
+
+            // Make sure the block at (nx, ny, nz) is NOT a solid block
+            // e.g., agent can move if it's air or water
+            MeshUtils.BlockType bType = world.GetBlockType(nx, ny, nz);
+            if (IsSolidBlock(bType))
             {
+                // We disallow moving inside a solid block
                 AddReward(invalidMovePenalty);
                 return;
             }
 
-            // Water check
-            if (world.GetBlockType((int)bx, (int)surfaceY, (int)bz) == MeshUtils.BlockType.WATER)
+            if(bType == MeshUtils.BlockType.BEDROCK || bType == MeshUtils.BlockType.STONE || ny <= 10)
             {
-                AddReward(invalidMovePenalty);
-                return;
+                ny = 30;
             }
 
-            // Another minor height check (you might remove duplicates):
-            if (surfaceY > by)
+            // If we pass the check, the agent is allowed to go there
+            bx = nx;
+            by = ny;
+            bz = nz;
+
+            int nextSurfaceY = FindTopSurface(nx, nz);
+            if (by > 0 || by <= nextSurfaceY)
             {
-                // Possibly disallow climbing if it's too high
-                AddReward(invalidMovePenalty);
-                return;
+                by = nextSurfaceY +1;
             }
 
-            // Accept this new top Y
-            by = surfaceY;
+            if (CanMoveDown(bx, by, bz))
+            {
+                if (!IsSolidBlock(bType) && by > FindTopSurface((int)bx, (int)bz)) { 
+                by -= 1; // forcibly drop one block
+                }
+                //AttemptMovement(6);
+            }
         }
 
-        // If valid movement, update agent's block coords
+        // 3) Update agent coords (float), place the agent visually
         gridX = bx;
         gridY = by;
         gridZ = bz;
-
-        // Position agent visually
         SetAgentAboveBlock(gridX, gridY, gridZ);
 
-        // Exploration reward
-        var newPos = new Vector3Int((int)gridX, (int)gridY, (int)gridZ);
+        // 4) Exploration reward if new block hasn't been visited
+        var newPos = new Vector3Int(Mathf.RoundToInt(gridX),
+                                    Mathf.RoundToInt(gridY),
+                                    Mathf.RoundToInt(gridZ));
         if (!visitedPositions.Contains(newPos))
         {
             visitedPositions.Add(newPos);
@@ -332,40 +351,61 @@ public class ResourceAgent : Agent
         }
     }
 
-    /// <summary>
-    /// If the block above isn't air, but the block two above is air => can climb.
-    /// </summary>
-    private bool CanClimbUp(float x, float y, float z)
-    {
-        int maxY = (World.worldDimensions.y + World.extraWorldDimensions.y) * World.chunkDimensions.y - 1;
-        if (y >= maxY) return false;
+    // ------------------------------------------------------------------------
+    // VERTICAL CHECKS
+    // ------------------------------------------------------------------------
 
-        MeshUtils.BlockType above = world.GetBlockType((int)x, (int)(y + 1), (int)z);
-        MeshUtils.BlockType headSpace = MeshUtils.BlockType.AIR;
-        if (y + 2 <= maxY)
-        {
-            headSpace = world.GetBlockType((int)x, (int)(y + 2), (int)z);
-        }
-        return (above != MeshUtils.BlockType.AIR && headSpace == MeshUtils.BlockType.AIR);
+    private bool CanMoveUp(float x, float y, float z)
+    {
+        // Next block up => (y+1). Make sure it’s in-bounds and not solid
+        int nx = Mathf.RoundToInt(x);
+        int ny = Mathf.RoundToInt(y + 1);
+        int nz = Mathf.RoundToInt(z);
+
+        // 1) Bounds
+        if (!world.InBounds(nx, ny, nz)) return false;
+
+        // 2) Solid check => disallow if it's e.g. stone, sand, etc.
+        MeshUtils.BlockType bType = world.GetBlockType(nx, ny, nz);
+        if (IsSolidBlock(bType)) return false;
+
+        return true; // air or water is OK
     }
 
-    /// <summary>
-    /// If the block below is air, and the block two below is solid => can drop.
-    /// </summary>
-    private bool CanDropDown(float x, float y, float z)
+    private bool CanMoveDown(float x, float y, float z)
     {
-        if (y <= 0) return false;
+        // Next block down => (y-1). Make sure it’s in-bounds and not solid
+        int nx = Mathf.RoundToInt(x);
+        int ny = Mathf.RoundToInt(y - 1);
+        int nz = Mathf.RoundToInt(z);
 
-        var below = world.GetBlockType((int)x, (int)(y - 1), (int)z);
-        if (below != MeshUtils.BlockType.AIR) return false;
+        if (!world.InBounds(nx, ny, nz)) return false;
 
-        if (y - 2 >= 0)
-        {
-            var floor = world.GetBlockType((int)x, (int)(y - 2), (int)z);
-            return (floor != MeshUtils.BlockType.AIR);
-        }
-        return false;
+        // If that block is solid => no
+        MeshUtils.BlockType bType = world.GetBlockType(nx, ny, nz);
+        if (IsSolidBlock(bType)) return false;
+
+        return true; // air or water is OK
     }
+
+    // ------------------------------------------------------------------------
+    // HELPER: Decide if a block is "solid" => agent can’t move into it
+    // ------------------------------------------------------------------------
+    private bool IsSolidBlock(MeshUtils.BlockType blockType)
+    {
+        // If your definition of 'solid' excludes water or air => 
+        // return true for any block that is not air or water
+        // e.g. stone, grass, dirt, etc.
+        switch (blockType)
+        {
+            case MeshUtils.BlockType.AIR:
+            case MeshUtils.BlockType.WATER:
+                return false;
+            default:
+                return true;
+        }
+    }
+
 
     /// <summary>
     /// Handle planting if the agent chooses to. We compare locScore to threshold,
@@ -375,38 +415,66 @@ public class ResourceAgent : Agent
     {
         if (plantAction != 1) return;
 
-        float locScore = cachedScore;  // We already computed this in scanning
+        float locScore = cachedScore;
         if (locScore < scoreThreshold)
         {
             AddReward(badPlantPenalty);
             return;
         }
 
-        // Check block below for invalid soil
-        if (IsInvalidBelow((int)gridX, (int)gridY, (int)gridZ))
+        // 1) Check if the agent's current block is water
+        int ix = Mathf.RoundToInt(gridX);
+        int iy = Mathf.RoundToInt(gridY);
+        int iz = Mathf.RoundToInt(gridZ);
+
+        MeshUtils.BlockType currentBlock = world.GetBlockType(ix, iy, iz);
+        if (currentBlock == MeshUtils.BlockType.WATER)
         {
-            AddReward(badPlantPenalty);  // or some other penalty
+            // Penalize heavily for trying to plant while submersed
+            AddReward(-100f);
             return;
         }
 
-        // Check if we already planted here
-        Vector2Int currentPos2D = new Vector2Int((int)gridX, (int)gridZ);
+        // 2) Check block below
+        if (!world.InBounds(ix, iy - 1, iz))
+        {
+            // Out-of-bounds => penalize
+            AddReward(badPlantPenalty);
+            return;
+        }
+
+        MeshUtils.BlockType belowBlock = world.GetBlockType(ix, iy - 1, iz);
+        if (belowBlock == MeshUtils.BlockType.WATER)
+        {
+            // Also penalize for water below
+            AddReward(-20f);
+            return;
+        }
+        else if (IsSolidBlock(belowBlock) == false)
+        {
+            // If the block below is air/water => not a valid soil
+            // (But here, we already returned if water, so must be air => also penalize?)
+            AddReward(badPlantPenalty);
+            return;
+        }
+
+        // 3) Check if we already planted here
+        Vector2Int currentPos2D = new Vector2Int(ix, iz);
         if (plantedLocations.Contains(currentPos2D))
         {
             AddReward(-50f);
             return;
         }
 
-        // Good plant
+        // If we get here, it's a valid planting
         plantedLocations.Add(currentPos2D);
         totalSeedsPlanted++;
 
-        // Example reward: locScore / threshold
         float plantingReward = locScore / scoreThreshold;
         AddReward(plantingReward);
-
+        AddReward(100);
         // Place seed physically
-        // We do (gridX+0.5, gridY, gridZ+0.5)*blockScale => small offset
+        // Example spawn pos: (gridX, gridY-0.5f, gridZ)*blockScale
         Vector3 spawnPos = new Vector3(
             (gridX) * blockScale,
             (gridY - 0.5f) * blockScale,
@@ -415,7 +483,7 @@ public class ResourceAgent : Agent
 
         GameObject newSeed = Instantiate(seedPrefab, spawnPos, Quaternion.identity);
         var grow = newSeed.GetComponent<TreeGrow>();
-        if (grow) grow.growthFactor = locScore; 
+        if (grow) grow.growthFactor = locScore;
 
         // Random material
         if (possibleMaterials != null && possibleMaterials.Length > 0)

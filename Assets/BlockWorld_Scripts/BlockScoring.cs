@@ -4,7 +4,8 @@ public static class BlockScoring
     {
         switch (b)
         {
-            case MeshUtils.BlockType.STONE: return 0f;
+            case MeshUtils.BlockType.BEDROCK: return -20f;
+            case MeshUtils.BlockType.STONE: return -10f;
             case MeshUtils.BlockType.SAND: return 1f;
             case MeshUtils.BlockType.DIRT: return 3f;
             case MeshUtils.BlockType.GRASSSIDE: return 5f;

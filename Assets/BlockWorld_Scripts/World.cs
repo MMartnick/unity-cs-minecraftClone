@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.MLAgents;
 using UnityEngine;
 using UnityEngine.UI;
 using static MeshUtils;
@@ -28,13 +29,13 @@ public struct PerlinSettings
 public class World : MonoBehaviour
 {
     public static Vector3Int worldDimensions = new Vector3Int(5,5,5);
-    public static Vector3Int extraWorldDimensions = new Vector3Int(2, 2, 2);
+    public static Vector3Int extraWorldDimensions = new Vector3Int(1, 1, 1);
     public static Vector3Int chunkDimensions = new Vector3Int(10, 10, 10);
     public bool loadFromFile = false;
     public GameObject chunkPrefab;
     public GameObject mCamera;
     public GameObject fpc;
-    public GameObject agent;
+    public GameObject[] agents;
     public Slider loadingBar;
 
     public static PerlinSettings surfaceSettings;
@@ -245,8 +246,11 @@ public class World : MonoBehaviour
     {
         loadingBar.maxValue = worldDimensions.x * worldDimensions.z;
 
-        if (agent != null)
-            agent.SetActive(false);
+        foreach (GameObject agent in agents)
+        {
+            if (agent != null)
+                agent.SetActive(false);
+        }
 
         surfaceSettings = new PerlinSettings(surface.heightScale, surface.scale,
                                              surface.octaves, surface.heightOffset, surface.probability);
@@ -628,9 +632,11 @@ public class World : MonoBehaviour
         StartCoroutine(BuildExtraWorld());
 
         // --- NEW: after everything is set up, enable the agent ---
-        if (agent != null)
-            agent.SetActive(true);
-
+        foreach(GameObject agent in agents)
+        {
+            if (agent != null)
+                agent.SetActive(true);
+        }
     }
 
     WaitForSeconds wfs = new WaitForSeconds(0.5f);
