@@ -136,7 +136,11 @@ public class World : MonoBehaviour
             c.CreateChunk(chunkDimensions, chunkPos, false);
             chunks.Add(chunkPos, c);
             RedrawChunk(c);
-            c.meshRenderer.enabled = wd.chunkVisibility[vIndex];
+            if (c.meshRendererSolid != null)
+                c.meshRendererSolid.enabled = wd.chunkVisibility[vIndex];
+            if (c.meshRendererFluid != null)
+                c.meshRendererFluid.enabled = wd.chunkVisibility[vIndex];
+
             vIndex++;
             yield return null;
         }
@@ -387,58 +391,64 @@ public class World : MonoBehaviour
 
                 Chunk thisChunk = hit.collider.gameObject.GetComponent<Chunk>();
 
-                int bx = (int)(Mathf.Round(hitBlock.x) - thisChunk.location.x);
-                int by = (int)(Mathf.Round(hitBlock.y) - thisChunk.location.y);
-                int bz = (int)(Mathf.Round(hitBlock.z) - thisChunk.location.z);
-
-                var blockNeighbour = GetWorldNeighbour(
-                    new Vector3Int(bx, by, bz),
-                    Vector3Int.CeilToInt(thisChunk.location)
-                );
-                thisChunk = chunks[blockNeighbour.Item2];
-                int i = ToFlat(blockNeighbour.Item1);
-
-                // left-click => remove, right-click => place
-                if (Input.GetMouseButtonDown(0))
+                if (thisChunk != null)
                 {
-                    // dig
-                    if (MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]] != -1)
+                    int bx = (int)(Mathf.Round(hitBlock.x) - thisChunk.location.x);
+                    int by = (int)(Mathf.Round(hitBlock.y) - thisChunk.location.y);
+                    int bz = (int)(Mathf.Round(hitBlock.z) - thisChunk.location.z);
+
+
+                    var blockNeighbour = GetWorldNeighbour(
+                        new Vector3Int(bx, by, bz),
+                        Vector3Int.CeilToInt(thisChunk.location)
+                    );
+
+                    thisChunk = chunks[blockNeighbour.Item2];
+                    int i = ToFlat(blockNeighbour.Item1);
+
+                    // left-click => remove, right-click => place
+                    if (Input.GetMouseButtonDown(0))
                     {
-                        if (thisChunk.healthData[i] == MeshUtils.BlockType.NOCRACK)
-                            StartCoroutine(HealBlock(thisChunk, i));
-                        thisChunk.healthData[i]++;
-
-                        if (thisChunk.healthData[i] ==
-                            MeshUtils.BlockType.NOCRACK +
-                            MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]]
-                        )
+                        // dig
+                        if (MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]] != -1)
                         {
-                            thisChunk.chunkData[i] = MeshUtils.BlockType.AIR;
+                            if (thisChunk.healthData[i] == MeshUtils.BlockType.NOCRACK)
+                                StartCoroutine(HealBlock(thisChunk, i));
+                            thisChunk.healthData[i]++;
 
-                            Vector3Int nBlock = FromFlat(i);
-                            var neighbourBlock = GetWorldNeighbour(
-                                new Vector3Int(nBlock.x, nBlock.y + 1, nBlock.z),
-                                Vector3Int.CeilToInt(thisChunk.location)
-                            );
-                            Vector3Int blockPos = neighbourBlock.Item1;
-                            int neighbourBlockIndex = ToFlat(blockPos);
-                            Chunk neighbourChunk = chunks[neighbourBlock.Item2];
-                            StartCoroutine(Drop(neighbourChunk, neighbourBlockIndex));
+                            if (thisChunk.healthData[i] ==
+                                MeshUtils.BlockType.NOCRACK +
+                                MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]]
+                            )
+                            {
+                                thisChunk.chunkData[i] = MeshUtils.BlockType.AIR;
+
+                                Vector3Int nBlock = FromFlat(i);
+                                var neighbourBlock = GetWorldNeighbour(
+                                    new Vector3Int(nBlock.x, nBlock.y + 1, nBlock.z),
+                                    Vector3Int.CeilToInt(thisChunk.location)
+                                );
+                                Vector3Int blockPos = neighbourBlock.Item1;
+                                int neighbourBlockIndex = ToFlat(blockPos);
+                                Chunk neighbourChunk = chunks[neighbourBlock.Item2];
+                                StartCoroutine(Drop(neighbourChunk, neighbourBlockIndex));
+                            }
                         }
+
                     }
-                }
-                else
-                {
-                    // place
-                    thisChunk.chunkData[i] = buildType;
-                    thisChunk.healthData[i] = MeshUtils.BlockType.NOCRACK;
-                    StartCoroutine(Drop(thisChunk, i));
+                    else
+                    {
+                        // place
+                        thisChunk.chunkData[i] = buildType;
+                        thisChunk.healthData[i] = MeshUtils.BlockType.NOCRACK;
+                        StartCoroutine(Drop(thisChunk, i));
+                    }
+
+                    RedrawChunk(thisChunk);
                 }
 
-                RedrawChunk(thisChunk);
+                UpdateWorld();
             }
-
-            UpdateWorld();
         }
     }
 
@@ -555,22 +565,28 @@ public class World : MonoBehaviour
 
     void BuildChunkColumn(int x, int z, bool meshEnabled = true)
     {
+        // Build vertical stack of chunks.
         for (int y = 0; y < worldDimensions.y; y++)
         {
-            Vector3Int position = new Vector3Int(x, y * chunkDimensions.y, z);
-            if (!chunkChecker.Contains(position))
+            Vector3Int pos = new Vector3Int(x, y * chunkDimensions.y, z);
+            if (!chunkChecker.Contains(pos))
             {
                 GameObject chunkObj = Instantiate(chunkPrefab);
-                chunkObj.name = $"Chunk_{position.x}_{position.y}_{position.z}";
+                chunkObj.name = $"Chunk_{pos.x}_{pos.y}_{pos.z}";
                 Chunk c = chunkObj.GetComponent<Chunk>();
-                c.CreateChunk(chunkDimensions, position);
-                chunkChecker.Add(position);
-                chunks.Add(position, c);
+                c.CreateChunk(chunkDimensions, pos);
+                chunkChecker.Add(pos);
+                chunks.Add(pos, c);
             }
-            chunks[position].meshRenderer.enabled = meshEnabled;
+            // Enable/disable the solid and fluid renderers.
+            if (chunks[pos].meshRendererSolid != null)
+                chunks[pos].meshRendererSolid.enabled = meshEnabled;
+            if (chunks[pos].meshRendererFluid != null)
+                chunks[pos].meshRendererFluid.enabled = meshEnabled;
         }
         chunkColumns.Add(new Vector2Int(x, z));
     }
+
 
     IEnumerator BuildExtraWorld()
     {
@@ -663,7 +679,10 @@ public class World : MonoBehaviour
             Vector3Int pos = new Vector3Int(x, y * chunkDimensions.y, z);
             if (chunkChecker.Contains(pos))
             {
-                chunks[pos].meshRenderer.enabled = false;
+                if (chunks[pos].meshRendererSolid != null)
+                    chunks[pos].meshRendererSolid.enabled = false;
+                if (chunks[pos].meshRendererFluid != null)
+                    chunks[pos].meshRendererFluid.enabled = false;
             }
         }
     }

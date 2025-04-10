@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static MeshUtils;
+using UnityEngine.SocialPlatforms;
 
 public class Block
 {
@@ -43,37 +45,48 @@ public class Block
         // 2) Build quads for any visible face
         List<Quad> quads = new List<Quad>();
 
-        // bottom
-        if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y - 1, (int)blockLocalPos.z))
+        if (type == MeshUtils.BlockType.WATER)
         {
-            if (type == MeshUtils.BlockType.GRASSSIDE)
-                quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, corners, MeshUtils.BlockType.DIRT, htype));
-            else
-                quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, corners, type, htype));
-        }
-
-        // top
-        if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y + 1, (int)blockLocalPos.z))
-        {
-            if (type == MeshUtils.BlockType.GRASSSIDE)
-                quads.Add(new Quad(MeshUtils.BlockSide.TOP, corners, MeshUtils.BlockType.GRASSTOP, htype));
-            else
+            // Only add a bottom face if the block below is AIR.
+            // Here we convert the local coordinate by subtracting 1 from the localY.
+            if (GetNeighbourBlockType((int)blockLocalPos.x, (int)blockLocalPos.y + 1, (int)blockLocalPos.z) == MeshUtils.BlockType.AIR)
+            {
                 quads.Add(new Quad(MeshUtils.BlockSide.TOP, corners, type, htype));
+            }
         }
+        else
+        {
+            // bottom
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y - 1, (int)blockLocalPos.z))
+            {
+                if (type == MeshUtils.BlockType.GRASSSIDE)
+                    quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, corners, MeshUtils.BlockType.DIRT, htype));
+                else
+                    quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, corners, type, htype));
+            }
 
-        // left
-        if (!HasSolidNeighbour((int)blockLocalPos.x - 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
-            quads.Add(new Quad(MeshUtils.BlockSide.LEFT, corners, type, htype));
-        // right
-        if (!HasSolidNeighbour((int)blockLocalPos.x + 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
-            quads.Add(new Quad(MeshUtils.BlockSide.RIGHT, corners, type, htype));
-        // front
-        if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z + 1))
-            quads.Add(new Quad(MeshUtils.BlockSide.FRONT, corners, type, htype));
-        // back
-        if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z - 1))
-            quads.Add(new Quad(MeshUtils.BlockSide.BACK, corners, type, htype));
+            // top
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y + 1, (int)blockLocalPos.z))
+            {
+                if (type == MeshUtils.BlockType.GRASSSIDE)
+                    quads.Add(new Quad(MeshUtils.BlockSide.TOP, corners, MeshUtils.BlockType.GRASSTOP, htype));
+                else
+                    quads.Add(new Quad(MeshUtils.BlockSide.TOP, corners, type, htype));
+            }
 
+            // left
+            if (!HasSolidNeighbour((int)blockLocalPos.x - 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
+                quads.Add(new Quad(MeshUtils.BlockSide.LEFT, corners, type, htype));
+            // right
+            if (!HasSolidNeighbour((int)blockLocalPos.x + 1, (int)blockLocalPos.y, (int)blockLocalPos.z))
+                quads.Add(new Quad(MeshUtils.BlockSide.RIGHT, corners, type, htype));
+            // front
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z + 1))
+                quads.Add(new Quad(MeshUtils.BlockSide.FRONT, corners, type, htype));
+            // back
+            if (!HasSolidNeighbour((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z - 1))
+                quads.Add(new Quad(MeshUtils.BlockSide.BACK, corners, type, htype));
+        }
         if (quads.Count == 0)
         {
             mesh = null;
@@ -89,6 +102,24 @@ public class Block
         mesh = MeshUtils.MergeMeshes(sideMeshes);
         mesh.name = "Cube_Smoothed";
     }
+
+    /// <summary>
+    /// Returns the block type of the neighbor at the given local coordinates (relative to the parent chunk).
+    /// If the coordinates are out of bounds, we assume the neighbor is AIR.
+    /// </summary>
+    private MeshUtils.BlockType GetNeighbourBlockType(int localX, int localY, int localZ)
+    {
+        int w = parentChunk.width;
+        int h = parentChunk.height;
+        int d = parentChunk.depth;
+        // If out of bounds, assume AIR.
+        if (localX < 0 || localX >= w || localY < 0 || localY >= h || localZ < 0 || localZ >= d)
+            return MeshUtils.BlockType.AIR;
+        int index = localX + w * (localY + d * localZ);
+        return parentChunk.chunkData[index];
+    }
+
+
 
     private bool IsFullyEnclosed(int x, int y, int z)
     {

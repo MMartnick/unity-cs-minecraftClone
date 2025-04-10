@@ -11,7 +11,7 @@ public class Chunk : MonoBehaviour
 {
     [Header("Materials")]
     public Material atlas;         // Opaque terrain material
-    public Material waterMaterial; // Transparent or water shader
+    public Material waterMaterial; // Transparent (fluid) material
 
     [Header("Chunk Dimensions")]
     public int width = 10;
@@ -25,11 +25,16 @@ public class Chunk : MonoBehaviour
     public MeshUtils.BlockType[] healthData;
 
     public Block[,,] blocks;
-    public MeshRenderer meshRenderer;
+
+    // New fields for dual-mesh support:
+    public MeshRenderer meshRendererSolid;
+    public MeshRenderer meshRendererFluid;
+    public GameObject solidMesh;
+    public GameObject fluidMesh;
 
     // Corner cache for smoothing/folding
-    private Dictionary<(int x, int y, int z, int cornerIndex), Vector3> cornerCache
-        = new Dictionary<(int, int, int, int), Vector3>();
+    private Dictionary<(int x, int y, int z, int cornerIndex), Vector3> cornerCache =
+        new Dictionary<(int, int, int, int), Vector3>();
 
     CalculateBlockTypes calculateBlockTypes;
     JobHandle jobHandle;
@@ -56,7 +61,7 @@ public class Chunk : MonoBehaviour
 
             var random = randoms[i];
 
-            // Some perlin-based heights
+            // Compute Perlin-based heights
             int surfaceHeight = (int)MeshUtils.fBM(
                 x, z,
                 World.surfaceSettings.octaves,
@@ -93,6 +98,7 @@ public class Chunk : MonoBehaviour
                 World.diamondBSettings.heightOffset
             );
 
+            // 3D noise for caves.
             int digCave = (int)MeshUtils.fBM3D(
                 x, y, z,
                 World.caveSettings.octaves,
@@ -101,7 +107,7 @@ public class Chunk : MonoBehaviour
                 World.caveSettings.heightOffset
             );
 
-            // Initialize health/cracks
+            // Initialize health/cracks info.
             hData[i] = MeshUtils.BlockType.NOCRACK;
 
             // Bedrock at y=0
@@ -118,10 +124,10 @@ public class Chunk : MonoBehaviour
                 return;
             }
 
-            // Grass top
+            // Top surface block
             if (surfaceHeight == y)
             {
-                cData[i] = MeshUtils.BlockType.GRASSSIDE; // or GRASSTOP
+                cData[i] = MeshUtils.BlockType.GRASSSIDE; // Alternatively, GRASSTOP for top appearance.
             }
             else if (y < diamondTHeight && y > diamondBHeight &&
                      random.NextFloat(1) <= World.diamondTSettings.probability)
@@ -142,6 +148,7 @@ public class Chunk : MonoBehaviour
             }
             else if (y < 20)
             {
+                // Water is considered fluid.
                 cData[i] = MeshUtils.BlockType.WATER;
             }
             else
@@ -157,10 +164,10 @@ public class Chunk : MonoBehaviour
         chunkData = new MeshUtils.BlockType[blockCount];
         healthData = new MeshUtils.BlockType[blockCount];
 
-        NativeArray<MeshUtils.BlockType> blockTypes
-            = new NativeArray<MeshUtils.BlockType>(chunkData, Allocator.Persistent);
-        NativeArray<MeshUtils.BlockType> healthTypes
-            = new NativeArray<MeshUtils.BlockType>(healthData, Allocator.Persistent);
+        NativeArray<MeshUtils.BlockType> blockTypes =
+            new NativeArray<MeshUtils.BlockType>(chunkData, Allocator.Persistent);
+        NativeArray<MeshUtils.BlockType> healthTypes =
+            new NativeArray<MeshUtils.BlockType>(healthData, Allocator.Persistent);
 
         var randArray = new Unity.Mathematics.Random[blockCount];
         var seed = new System.Random();
@@ -191,9 +198,11 @@ public class Chunk : MonoBehaviour
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // 2) CREATE THE CHUNK IN MULTIPLE PASSES
+    // 2) CREATE THE CHUNK IN MULTIPLE PASSES (SOLID & FLUID)
     ////////////////////////////////////////////////////////////////////////////////
 
+    // The Passes array groups block types into passes.
+    // (We assume WATER is the only fluid block processed in its own pass.)
     private static readonly MeshUtils.BlockType[][] Passes = new MeshUtils.BlockType[][]
     {
         new MeshUtils.BlockType[]{ MeshUtils.BlockType.BEDROCK, MeshUtils.BlockType.STONE, MeshUtils.BlockType.DIAMOND },
@@ -213,54 +222,92 @@ public class Chunk : MonoBehaviour
 
         cornerCache.Clear();
 
-        MeshFilter mf = gameObject.AddComponent<MeshFilter>();
-        MeshRenderer mr = gameObject.AddComponent<MeshRenderer>();
-        meshRenderer = mr;
-        mr.material = atlas;
+        MeshFilter solidMF;
+        MeshRenderer solidMR;
+        MeshFilter fluidMF;
+        MeshRenderer fluidMR;
 
+        // Create or retrieve the child for the solid mesh.
+        if (solidMesh == null)
+        {
+            solidMesh = new GameObject("Solid");
+            solidMesh.transform.parent = this.transform;
+            solidMF = solidMesh.AddComponent<MeshFilter>();
+            solidMR = solidMesh.AddComponent<MeshRenderer>();
+            meshRendererSolid = solidMR;
+            solidMR.material = atlas; // Opaque material.
+        }
+        else
+        {
+            solidMF = solidMesh.GetComponent<MeshFilter>();
+        }
+
+        // Create or retrieve the child for the fluid mesh.
+        if (fluidMesh == null)
+        {
+            fluidMesh = new GameObject("Fluid");
+            fluidMesh.transform.parent = this.transform;
+            fluidMF = fluidMesh.AddComponent<MeshFilter>();
+            fluidMR = fluidMesh.AddComponent<MeshRenderer>();
+            meshRendererFluid = fluidMR;
+            fluidMR.material = waterMaterial; // Transparent fluid material.
+        }
+        else
+        {
+            fluidMF = fluidMesh.GetComponent<MeshFilter>();
+        }
+
+        // Build or rebuild the block data.
         blocks = new Block[width, height, depth];
-
         if (rebuildBlocks)
             BuildChunk();
 
-        var solidMeshes = new List<Mesh>();
-        var waterMeshes = new List<Mesh>();
+        // Prepare separate lists for solid and fluid meshes.
+        List<Mesh> solidMeshesList = new List<Mesh>();
+        List<Mesh> fluidMeshesList = new List<Mesh>();
 
-        // Build passes in order
-        for (int passIndex = 0; passIndex < Passes.Length; passIndex++)
+        // Two-pass loop:
+        // Pass = 0 for non-fluid blocks, Pass = 1 for fluid blocks.
+        for (int pass = 0; pass < 2; pass++)
         {
-            var passTypes = Passes[passIndex];
-            bool isWaterPass = (passTypes.Length == 1 && passTypes[0] == MeshUtils.BlockType.WATER);
-
-            var passMeshes = BuildBlockMeshesForTypes(passTypes);
-            if (!isWaterPass)
-                solidMeshes.AddRange(passMeshes);
-            else
-                waterMeshes.AddRange(passMeshes);
+            for (int passIndex = 0; passIndex < Passes.Length; passIndex++)
+            {
+                var passTypes = Passes[passIndex];
+                // Determine if this pass group is fluid.
+                bool isFluidType = (passTypes.Length == 1 && passTypes[0] == MeshUtils.BlockType.WATER);
+                var passMeshes = BuildBlockMeshesForTypes(passTypes);
+                if (pass == 0 && !isFluidType)
+                {
+                    solidMeshesList.AddRange(passMeshes);
+                }
+                else if (pass == 1 && isFluidType)
+                {
+                    fluidMeshesList.AddRange(passMeshes);
+                }
+            }
         }
 
-        // Combine solids
-        Mesh terrainMesh = CombineMeshes(solidMeshes,
-            $"Terrain_{location.x}_{location.y}_{location.z}");
-        mf.mesh = terrainMesh;
+        // Combine the solid meshes into one mesh.
+        Mesh terrainMesh = CombineMeshes(solidMeshesList, $"Terrain_{location.x}_{location.y}_{location.z}");
+        solidMF.mesh = terrainMesh;
+        // Fix chunk boundary overlap for solid mesh.
+        FixChunkBoundaryOverlap(terrainMesh, 0.001f);
 
-        MeshCollider collider = gameObject.AddComponent<MeshCollider>();
-        collider.sharedMesh = mf.mesh;
+        // Assign a collider only to the solid mesh (fluid does not get a collider).
+        MeshCollider collider = GetComponent<MeshCollider>();
+        if (collider == null)
+            collider = gameObject.AddComponent<MeshCollider>();
+        collider.sharedMesh = terrainMesh;
 
-        // Combine water
-        if (waterMeshes.Count > 0)
+        // Combine the fluid meshes (if any) into a separate mesh.
+        if (fluidMeshesList.Count > 0)
         {
-            Mesh waterMesh = CombineMeshes(waterMeshes,
-                $"Water_{location.x}_{location.y}_{location.z}");
-
-            GameObject waterGO = new GameObject("WaterGO");
-            waterGO.transform.SetParent(this.transform, false);
-
-            MeshFilter wmf = waterGO.AddComponent<MeshFilter>();
-            MeshRenderer wmr = waterGO.AddComponent<MeshRenderer>();
-
-            wmf.mesh = waterMesh;
-            wmr.material = (waterMaterial != null) ? waterMaterial : atlas;
+            Mesh waterMesh = CombineMeshes(fluidMeshesList, $"Water_{location.x}_{location.y}_{location.z}");
+            // Lower water by an additional 0.001f to help with depth fighting.
+            AdjustWaterMeshZFighting(waterMesh, -0.001f);
+            // Fix chunk boundary overlap for water as well.
+            FixChunkBoundaryOverlap(waterMesh, 0.001f);
+            fluidMF.mesh = waterMesh;
         }
     }
 
@@ -279,7 +326,7 @@ public class Chunk : MonoBehaviour
                     if (!IsBlockInList(bType, typesWanted))
                         continue;
 
-                    // Create the block => builds a mesh
+                    // Create the block (this builds its mesh).
                     blocks[x, y, z] = new Block(
                         new Vector3(x, y, z) + location,
                         bType,
@@ -307,7 +354,7 @@ public class Chunk : MonoBehaviour
     }
 
     /// <summary>
-    /// Combine a list of individual meshes into a single mesh.
+    /// Combine a list of individual meshes into one mesh.
     /// </summary>
     private Mesh CombineMeshes(List<Mesh> inputMeshes, string newMeshName)
     {
@@ -327,7 +374,7 @@ public class Chunk : MonoBehaviour
             triStart = new NativeArray<int>(meshCount, Allocator.TempJob)
         };
 
-        // Tally vertex/index counts
+        // Tally vertex and index counts.
         for (int m = 0; m < meshCount; m++)
         {
             var mesh = inputMeshes[m];
@@ -391,7 +438,7 @@ public class Chunk : MonoBehaviour
             int vCount = data.vertexCount;
             int vStart = vertexStart[index];
 
-            // read source mesh data
+            // Read source mesh data.
             var verts = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var norms = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var uvs = new NativeArray<float3>(vCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
@@ -424,7 +471,7 @@ public class Chunk : MonoBehaviour
             int tCount = data.GetSubMesh(0).indexCount;
             var dstTris = outputMesh.GetIndexData<int>();
 
-            // copy indices
+            // Copy indices.
             if (data.indexFormat == IndexFormat.UInt16)
             {
                 var sTris = data.GetIndexData<ushort>();
@@ -441,55 +488,76 @@ public class Chunk : MonoBehaviour
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // 3) CORNER FOLDING: SHIFT CORNER FOR >=2 OPEN (AIR) SIDES,
-    //    AVERAGING SHIFT SO TOTAL REMAINS ~0.5
+    // 3) CORNER FOLDING: Adjust corners based on open (AIR) sides.
+    //    If a side is open, the corner is shifted inward.
+    //    Additionally, we lower water corners by 0.2f.
     ////////////////////////////////////////////////////////////////////////////////
-    public Vector3 GetOrComputeCorner(int bx, int by, int bz,
-                                      int cornerIndex,
-                                      MeshUtils.BlockType blockType)
+
+    // Returns true if the adjacent side is considered open for folding based on the current block type.
+    private bool IsOpenForFolding(int bx, int by, int bz, Side side, MeshUtils.BlockType currentBlockType)
+    {
+        int nx = bx, ny = by, nz = bz;
+        switch (side)
+        {
+            case Side.TOP: ny--; break;
+            case Side.BOTTOM: ny++; break;
+            case Side.LEFT: nx--; break;
+            case Side.RIGHT: nx++; break;
+            case Side.FRONT: nz++; break;
+            case Side.BACK: nz--; break;
+        }
+
+        // If out-of-bounds, treat as open.
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth)
+            return true;
+
+        MeshUtils.BlockType neighbor = chunkData[nx + width * (ny + depth * nz)];
+
+        // Solid blocks: open if neighbor is AIR or WATER.
+        if (currentBlockType != MeshUtils.BlockType.WATER)
+            return (neighbor == MeshUtils.BlockType.AIR || neighbor == MeshUtils.BlockType.WATER);
+        else // Water blocks: open only if neighbor is AIR.
+            return (neighbor == MeshUtils.BlockType.AIR);
+    }
+
+    // Revised GetOpenSides which takes current block type into account.
+    private List<Vector3> GetOpenSides(int bx, int by, int bz, int cornerIndex, MeshUtils.BlockType currentBlockType)
+    {
+        List<Vector3> openDirs = new List<Vector3>();
+        var sides = GetCornerSides(cornerIndex);
+        foreach (Side s in sides)
+        {
+            if (IsOpenForFolding(bx, by, bz, s, currentBlockType))
+                openDirs.Add(GetSideInwardVector(s));
+        }
+        return openDirs;
+    }
+
+    // Revised GetOrComputeCorner: For water blocks, simply lower the corner by 0.2f; then apply folding if any side is open.
+    public Vector3 GetOrComputeCorner(int bx, int by, int bz, int cornerIndex, MeshUtils.BlockType blockType)
     {
         var key = (bx, by, bz, cornerIndex);
         if (cornerCache.TryGetValue(key, out Vector3 cachedPos))
-        {
             return cachedPos;
-        }
 
         Vector3 baseCorner = GetBaseCorner(new Vector3(bx, by, bz), cornerIndex);
 
-        // If it's water => small nudge, but do not treat it as open for folding
         if (blockType == MeshUtils.BlockType.WATER)
         {
-            baseCorner.y -= 0.02f;
-            baseCorner.x += 0.02f;
-            baseCorner.z += 0.02f;
+            // Lower water corners by 0.2f on the Y-axis.
+            baseCorner.y -= 0.2f;
         }
 
-        // (Optional) Stone offset removed or commented out:
-        // if (blockType == MeshUtils.BlockType.STONE)
-        // {
-        //     baseCorner.x += 0.05f;
-        //     baseCorner.y += 0.05f;
-        //     baseCorner.z += 0.05f;
-        // }
-
-        // Count how many sides are open (AIR only)
-        var openSides = GetOpenSides(bx, by, bz, cornerIndex);
-        // If at least 2 sides are open => fold corner
-        if (openSides.Count >= 3)
+        // For both solid and water, if one or more sides are open, fold the corner inward.
+        var openSides = GetOpenSides(bx, by, bz, cornerIndex, blockType);
+        if (openSides.Count >=3)
         {
-            // We'll sum direction vectors, then normalize so total shift is ~0.5
             Vector3 sumDir = Vector3.zero;
             foreach (var dir in openSides)
-            {
                 sumDir += dir;
-            }
-
-            // Avoid zero magnitude
-            float mag = sumDir.magnitude;
-            if (mag > 0.0001f)
+            if (sumDir.magnitude > 0.1f)
             {
-                // We want a total shift of 0.5 in the *combined* direction
-                Vector3 fold = sumDir.normalized * 0.5f;
+                Vector3 fold = sumDir.normalized * -0.5f; // Negative sign to fold inward.
                 baseCorner += fold;
             }
         }
@@ -500,7 +568,7 @@ public class Chunk : MonoBehaviour
     }
 
     /// <summary>
-    /// Return the local corner position w/o folding
+    /// Returns the local corner position without folding.
     /// </summary>
     private Vector3 GetBaseCorner(Vector3 blockPos, int cornerIndex)
     {
@@ -521,28 +589,7 @@ public class Chunk : MonoBehaviour
     }
 
     /// <summary>
-    /// We check the 3 sides for this corner, and if the neighbor is AIR => we add 
-    /// that side's inward direction to a List. We'll do an average shift from them.
-    /// </summary>
-    private List<Vector3> GetOpenSides(int bx, int by, int bz, int cornerIndex)
-    {
-        List<Vector3> openDirs = new List<Vector3>();
-        var sides = GetCornerSides(cornerIndex);
-
-        foreach (Side s in sides)
-        {
-            if (IsAirNeighbor(bx, by, bz, s))
-            {
-                // add the "inward" direction
-                openDirs.Add(GetSideInwardVector(s));
-            }
-        }
-        return openDirs;
-    }
-
-    /// <summary>
-    /// Returns which sides matter for that corner: 
-    /// e.g. corner=4 => top-left-front => sides={TOP,LEFT,FRONT}
+    /// Returns which sides are relevant for this corner.
     /// </summary>
     private Side[] GetCornerSides(int cIndex)
     {
@@ -572,13 +619,10 @@ public class Chunk : MonoBehaviour
             case Side.FRONT: nz++; break;
             case Side.BACK: nz--; break;
         }
-
-        // if OOB => not air
         if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth)
             return false;
 
         var neighbor = chunkData[nx + width * (ny + depth * nz)];
-        // Now we treat only AIR as open => no water
         return (neighbor == MeshUtils.BlockType.AIR);
     }
 
@@ -604,5 +648,46 @@ public class Chunk : MonoBehaviour
         RIGHT,
         FRONT,
         BACK
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // NEW HELPER METHODS FOR OVERLAP & Z-FIGHTING
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// <summary>
+    /// Slightly adjusts vertices at the chunk boundaries (in X and Z) to prevent overlap.
+    /// </summary>
+    private void FixChunkBoundaryOverlap(Mesh mesh, float offset)
+    {
+        Vector3[] verts = mesh.vertices;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            // If near the left or bottom edge (using a tolerance), nudge outward.
+            if (Mathf.Abs(verts[i].x) < 0.001f)
+                verts[i].x -= offset;
+            else if (Mathf.Abs(verts[i].x - width) < 0.001f)
+                verts[i].x += offset;
+
+            if (Mathf.Abs(verts[i].z) < 0.001f)
+                verts[i].z -= offset;
+            else if (Mathf.Abs(verts[i].z - depth) < 0.001f)
+                verts[i].z += offset;
+        }
+        mesh.vertices = verts;
+        mesh.RecalculateBounds();
+    }
+
+    /// <summary>
+    /// Adjusts water mesh vertices in Y to alleviate z-fighting.
+    /// </summary>
+    private void AdjustWaterMeshZFighting(Mesh mesh, float yOffset)
+    {
+        Vector3[] verts = mesh.vertices;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            verts[i].y += yOffset;
+        }
+        mesh.vertices = verts;
+        mesh.RecalculateBounds();
     }
 }
