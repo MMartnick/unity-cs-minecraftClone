@@ -369,6 +369,7 @@ public class World : MonoBehaviour
         );
     }
 
+
     void Update()
     {
         if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
@@ -377,7 +378,7 @@ public class World : MonoBehaviour
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             if (Physics.Raycast(ray, out hit, 10))
             {
-                Vector3 hitBlock;
+                Vector3 hitBlock = Vector3.zero;
                 if (Input.GetMouseButtonDown(0))
                 {
                     // removing half-a-normal => "dig"

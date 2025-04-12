@@ -550,7 +550,7 @@ public class Chunk : MonoBehaviour
 
         // For both solid and water, if one or more sides are open, fold the corner inward.
         var openSides = GetOpenSides(bx, by, bz, cornerIndex, blockType);
-        if (openSides.Count >=3)
+        if (openSides.Count >4)
         {
             Vector3 sumDir = Vector3.zero;
             foreach (var dir in openSides)
