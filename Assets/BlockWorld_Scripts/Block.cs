@@ -47,11 +47,30 @@ public class Block
 
         if (type == MeshUtils.BlockType.WATER)
         {
-            // Only add a bottom face if the block below is AIR.
-            // Here we convert the local coordinate by subtracting 1 from the localY.
+
             if (GetNeighbourBlockType((int)blockLocalPos.x, (int)blockLocalPos.y + 1, (int)blockLocalPos.z) == MeshUtils.BlockType.AIR)
             {
                 quads.Add(new Quad(MeshUtils.BlockSide.TOP, corners, type, htype));
+            }
+            if (GetNeighbourBlockType((int)blockLocalPos.x, (int)blockLocalPos.y -1, (int)blockLocalPos.z) == MeshUtils.BlockType.AIR)
+            {
+                quads.Add(new Quad(MeshUtils.BlockSide.BOTTOM, corners, type, htype));
+            }
+            if (GetNeighbourBlockType((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z + 1) == MeshUtils.BlockType.AIR)
+            {
+                quads.Add(new Quad(MeshUtils.BlockSide.FRONT, corners, type, htype));
+            }
+            if (GetNeighbourBlockType((int)blockLocalPos.x, (int)blockLocalPos.y, (int)blockLocalPos.z-1) == MeshUtils.BlockType.AIR)
+            {
+                quads.Add(new Quad(MeshUtils.BlockSide.BACK, corners, type, htype));
+            }
+            if (GetNeighbourBlockType((int)blockLocalPos.x-1, (int)blockLocalPos.y, (int)blockLocalPos.z) == MeshUtils.BlockType.AIR)
+            {
+                quads.Add(new Quad(MeshUtils.BlockSide.LEFT, corners, type, htype));
+            }
+            if (GetNeighbourBlockType((int)blockLocalPos.x + 1, (int)blockLocalPos.y, (int)blockLocalPos.z) == MeshUtils.BlockType.AIR)
+            {
+                quads.Add(new Quad(MeshUtils.BlockSide.RIGHT, corners, type, htype));
             }
         }
         else

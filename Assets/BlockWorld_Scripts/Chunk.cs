@@ -310,6 +310,24 @@ public class Chunk : MonoBehaviour
             fluidMF.mesh = waterMesh;
         }
     }
+    private bool IsAirNeighbor(int bx, int by, int bz, Side side)
+    {
+        int nx = bx, ny = by, nz = bz;
+        switch (side)
+        {
+            case Side.TOP: ny++; break;
+            case Side.BOTTOM: ny--; break;
+            case Side.LEFT: nx--; break;
+            case Side.RIGHT: nx++; break;
+            case Side.FRONT: nz++; break;
+            case Side.BACK: nz--; break;
+        }
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth)
+            return false;
+
+        var neighbor = chunkData[nx + width * (ny + depth * nz)];
+        return (neighbor == MeshUtils.BlockType.AIR);
+    }
 
     private List<Mesh> BuildBlockMeshesForTypes(MeshUtils.BlockType[] typesWanted)
     {
@@ -534,6 +552,7 @@ public class Chunk : MonoBehaviour
     }
 
     // Revised GetOrComputeCorner: For water blocks, simply lower the corner by 0.2f; then apply folding if any side is open.
+    // Revised GetOrComputeCorner which now checks the corner vertex directly.
     public Vector3 GetOrComputeCorner(int bx, int by, int bz, int cornerIndex, MeshUtils.BlockType blockType)
     {
         var key = (bx, by, bz, cornerIndex);
@@ -542,22 +561,26 @@ public class Chunk : MonoBehaviour
 
         Vector3 baseCorner = GetBaseCorner(new Vector3(bx, by, bz), cornerIndex);
 
-        if (blockType == MeshUtils.BlockType.WATER)
+        // For water blocks, if this is a top corner (cornerIndex 4–7) and the corner vertex is exposed (touching air),
+        // then lower the corner by 0.2f.
+        if (blockType == MeshUtils.BlockType.WATER && cornerIndex >= 4)
         {
-            // Lower water corners by 0.2f on the Y-axis.
-            baseCorner.y -= 0.2f;
+            if (IsCornerExposed(bx, by, bz, cornerIndex))
+            {
+                baseCorner.y -= 0.2f;
+            }
         }
 
-        // For both solid and water, if one or more sides are open, fold the corner inward.
+        // For both solid and water, if more than 4 sides are open, fold the corner inward.
         var openSides = GetOpenSides(bx, by, bz, cornerIndex, blockType);
-        if (openSides.Count >4)
+        if (openSides.Count > 3)
         {
             Vector3 sumDir = Vector3.zero;
             foreach (var dir in openSides)
                 sumDir += dir;
-            if (sumDir.magnitude > 0.1f)
+            if (sumDir.magnitude > -0.1f)
             {
-                Vector3 fold = sumDir.normalized * -0.5f; // Negative sign to fold inward.
+                Vector3 fold = sumDir.normalized * 0.5f;
                 baseCorner += fold;
             }
         }
@@ -607,25 +630,6 @@ public class Chunk : MonoBehaviour
         return new Side[0];
     }
 
-    private bool IsAirNeighbor(int bx, int by, int bz, Side side)
-    {
-        int nx = bx, ny = by, nz = bz;
-        switch (side)
-        {
-            case Side.TOP: ny++; break;
-            case Side.BOTTOM: ny--; break;
-            case Side.LEFT: nx--; break;
-            case Side.RIGHT: nx++; break;
-            case Side.FRONT: nz++; break;
-            case Side.BACK: nz--; break;
-        }
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth)
-            return false;
-
-        var neighbor = chunkData[nx + width * (ny + depth * nz)];
-        return (neighbor == MeshUtils.BlockType.AIR);
-    }
-
     private Vector3 GetSideInwardVector(Side s)
     {
         switch (s)
@@ -638,6 +642,50 @@ public class Chunk : MonoBehaviour
             case Side.BACK: return Vector3.forward;
         }
         return Vector3.zero;
+    }
+
+    private bool IsCornerExposed(int bx, int by, int bz, int cornerIndex)
+    {
+        // Determine the relative integer offsets for this corner.
+        // We'll assume for a block at (bx,by,bz) the 8 corners are at:
+        // (bx, by, bz), (bx+1, by, bz), (bx, by+1, bz), (bx+1, by+1, bz),
+        // (bx, by, bz+1), (bx+1, by, bz+1), (bx, by+1, bz+1), (bx+1, by+1, bz+1).
+        // We need to map our cornerIndex to the appropriate offsets.
+        int dx = (cornerIndex == 1 || cornerIndex == 3 || cornerIndex == 5 || cornerIndex == 7) ? 1 : 0;
+        int dy = (cornerIndex >= 4) ? 1 : 0;
+        int dz = (cornerIndex >= 2 && cornerIndex <= 3) || (cornerIndex >= 6) ? 1 : 0;
+
+        // The vertex of interest is at (bx+dx, by+dy, bz+dz).
+        // Check the 8 blocks that share that vertex.
+        // Those blocks have their integer coordinates in ranges:
+        // X: (bx+dx - 1) to (bx+dx)
+        // Y: (by+dy - 1) to (by+dy)
+        // Z: (bz+dz - 1) to (bz+dz)
+        for (int ox = 0; ox < 2; ox++)
+        {
+            for (int oy = 0; oy < 2; oy++)
+            {
+                for (int oz = 0; oz < 2; oz++)
+                {
+                    int checkX = (bx + dx - 1) + ox;
+                    int checkY = (by + dy - 1) + oy;
+                    int checkZ = (bz + dz - 1) + oz;
+                    // If any of these coordinates are out-of-bounds, consider the vertex exposed.
+                    if (checkX < 0 || checkX >= width ||
+                        checkY < 0 || checkY >= height ||
+                        checkZ < 0 || checkZ >= depth)
+                    {
+                        return true;
+                    }
+                    int index = checkX + width * (checkY + depth * checkZ);
+                    if (chunkData[index] == MeshUtils.BlockType.AIR)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private enum Side
