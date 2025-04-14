@@ -578,9 +578,9 @@ public class Chunk : MonoBehaviour
             Vector3 sumDir = Vector3.zero;
             foreach (var dir in openSides)
                 sumDir += dir;
-            if (sumDir.magnitude > -0.1f)
+            if (sumDir.magnitude > 1f)
             {
-                Vector3 fold = sumDir.normalized * 0.5f;
+                Vector3 fold = sumDir.normalized * -0.75f;
                 baseCorner += fold;
             }
         }

@@ -33,8 +33,16 @@ public class World : MonoBehaviour
     public static Vector3Int chunkDimensions = new Vector3Int(10, 10, 10);
     public bool loadFromFile = false;
     public GameObject chunkPrefab;
+
     public GameObject mCamera;
     public GameObject fpc;
+
+    // ADD THIS: reference to your third-person camera:
+    public GameObject thirdPersonCamera;
+
+    // If you want a quick check for which camera is on:
+    private bool usingThirdPerson = false;
+
     public GameObject[] agents;
     public Slider loadingBar;
 
@@ -149,7 +157,8 @@ public class World : MonoBehaviour
 
 
         mCamera.SetActive(false);
-        fpc.SetActive(true);
+        thirdPersonCamera.SetActive(true);
+
 
         loadingBar.gameObject.SetActive(false);
         lastBuildPosition = Vector3Int.CeilToInt(fpc.transform.position);
@@ -274,6 +283,8 @@ public class World : MonoBehaviour
         caveSettings = new PerlinSettings(caves.heightScale, caves.scale,
                                           caves.octaves, caves.heightOffset, caves.DrawCutOff);
 
+
+
         if (loadFromFile)
             StartCoroutine(LoadWorldFromFile());
         else
@@ -372,6 +383,15 @@ public class World : MonoBehaviour
 
     void Update()
     {
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            usingThirdPerson = !usingThirdPerson;
+
+            // Enable or disable the relevant cameras
+            if (fpc != null) fpc.SetActive(!usingThirdPerson);
+            if (thirdPersonCamera != null) thirdPersonCamera.SetActive(usingThirdPerson);
+        }
+
         if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
         {
             RaycastHit hit;
