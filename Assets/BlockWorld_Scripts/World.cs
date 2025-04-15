@@ -43,6 +43,8 @@ public class World : MonoBehaviour
     // If you want a quick check for which camera is on:
     private bool usingThirdPerson = false;
 
+    public Image crosshair;
+
     public GameObject[] agents;
     public Slider loadingBar;
 
@@ -64,7 +66,8 @@ public class World : MonoBehaviour
     public static PerlinSettings caveSettings;
     public Perlin3DGrapher caves;
 
-    // If you had treeSettings, it might go here...
+    public GameObject highlightPrefab;  // Assign in Inspector
+    private GameObject highlightObject; // We'll instantiate at runtime
 
     public HashSet<Vector3Int> chunkChecker = new HashSet<Vector3Int>();
     public HashSet<Vector2Int> chunkColumns = new HashSet<Vector2Int>();
@@ -283,7 +286,12 @@ public class World : MonoBehaviour
         caveSettings = new PerlinSettings(caves.heightScale, caves.scale,
                                           caves.octaves, caves.heightOffset, caves.DrawCutOff);
 
-
+        if (highlightPrefab != null)
+        {
+            highlightObject = Instantiate(highlightPrefab);
+            highlightObject.name = "BlockHighlight";
+            highlightObject.SetActive(false);  // start hidden
+        }
 
         if (loadFromFile)
             StartCoroutine(LoadWorldFromFile());
@@ -383,100 +391,180 @@ public class World : MonoBehaviour
 
     void Update()
     {
+        // 1) Check if we toggle between first- and third-person with R
         if (Input.GetKeyDown(KeyCode.R))
         {
             usingThirdPerson = !usingThirdPerson;
 
-            // Enable or disable the relevant cameras
-            if (fpc != null) fpc.GetComponentInChildren<Camera>().enabled = !usingThirdPerson;
-            if (thirdPersonCamera != null) thirdPersonCamera.SetActive(usingThirdPerson);
-        }
+            // Enable/disable the correct controllers on the fpc object
+            var fpcController = fpc.GetComponent<UnityStandardAssets.Characters.FirstPerson.FirstPersonController>();
+            var tpcController = fpc.GetComponent<ThirdPersonController>();
 
-        if(usingThirdPerson)
-        {
-            thirdPersonCamera.transform.position = new Vector3(fpc.transform.position.x, 35, fpc.transform.position.z - 15);
-        }
+            if (fpcController != null) fpcController.enabled = !usingThirdPerson;
+            if (tpcController != null) tpcController.enabled = usingThirdPerson;
 
-        if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
-        {
-            RaycastHit hit;
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out hit, 10))
+            // Switch cameras
+            if (fpc != null)
             {
-                Vector3 hitBlock = Vector3.zero;
+                mCamera.SetActive(!usingThirdPerson);
+                // Turn highlight on for first-person, off for third-person
+                if (highlightPrefab != null) highlightPrefab.SetActive(!usingThirdPerson);
+
+                // Example: Show sprite in third-person, hide in first-person
+                // (if you have a SpriteRenderer on the TPC, do this):
+                var spriteRenderer = tpcController.spriteTransform.gameObject.GetComponent<SpriteRenderer>();
+                if (spriteRenderer != null)
+                    spriteRenderer.enabled =false;
+                crosshair.enabled = true;
+            }
+            if (thirdPersonCamera != null)
+            {
+
+                thirdPersonCamera.SetActive(usingThirdPerson);
+            }
+        }
+
+        // 2) If we are currently in third-person, update overhead camera, then return
+        if (usingThirdPerson)
+        {
+            var tpcController = fpc.GetComponent<ThirdPersonController>();
+            var spriteRenderer = tpcController.spriteTransform.gameObject.GetComponent<SpriteRenderer>();
+            if (spriteRenderer != null)
+                spriteRenderer.enabled = true;
+            // Keep the overhead camera above the player
+            thirdPersonCamera.transform.position = fpc.transform.position + new Vector3(0, 35, -15);
+
+            // No highlighting or block modifications in third-person
+            if (highlightPrefab != null) highlightPrefab.SetActive(false);
+
+            // disable crosshair
+            crosshair.enabled = false;
+            return;
+        }
+
+        // 3) Otherwise (first-person mode) => do highlight & building logic
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        RaycastHit hit;
+
+        // Raycast to see if we hit a chunk
+        if (Physics.Raycast(ray, out hit, 10f))
+        {
+            Chunk thisChunk = hit.collider.gameObject.GetComponent<Chunk>();
+            if (thisChunk != null)
+            {
+                // Figure out which block we’re pointing at
+                Vector3 centerOfBlock = hit.point - hit.normal / 2.0f;
+                // Convert to local chunk coords
+                int bx = (int)(Mathf.Round(centerOfBlock.x) - thisChunk.location.x);
+                int by = (int)(Mathf.Round(centerOfBlock.y) - thisChunk.location.y);
+                int bz = (int)(Mathf.Round(centerOfBlock.z) - thisChunk.location.z);
+
+                var blockNeighbour = GetWorldNeighbour(new Vector3Int(bx, by, bz),
+                                                       Vector3Int.CeilToInt(thisChunk.location));
+
+                thisChunk = chunks[blockNeighbour.Item2];
+                Vector3Int localBlockIndex = blockNeighbour.Item1;
+
+                // Convert local coords -> world coords
+                Vector3Int worldBlockPos = new Vector3Int(
+                    (int)thisChunk.location.x + localBlockIndex.x,
+                    (int)thisChunk.location.y + localBlockIndex.y,
+                    (int)thisChunk.location.z + localBlockIndex.z
+                );
+
+                // Show highlight at that block
+                if (highlightObject != null)
+                {
+                    highlightObject.transform.position = worldBlockPos;
+                    highlightObject.SetActive(true);
+                }
+            }
+            else
+            {
+                // We hit something that isn't a chunk => hide highlight
+                if (highlightObject != null)
+                    highlightObject.SetActive(false);
+            }
+        }
+        else
+        {
+            // Missed entirely => hide highlight
+            if (highlightObject != null)
+                highlightObject.SetActive(false);
+        }
+
+        // 4) Check mouse for dig/place; re-use the same ray so we don't do another
+        if ((Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1)) && Physics.Raycast(ray, out hit, 10f))
+        {
+            Vector3 hitBlock = Vector3.zero;
+            // If left-click => dig; if right-click => place
+            if (Input.GetMouseButtonDown(0))
+                hitBlock = hit.point - hit.normal / 2.0f;
+            else
+                hitBlock = hit.point + hit.normal / 2.0f;
+
+            Chunk thisChunk = hit.collider.gameObject.GetComponent<Chunk>();
+            if (thisChunk != null)
+            {
+                // Convert that hitBlock to local coords
+                int bx = (int)(Mathf.Round(hitBlock.x) - thisChunk.location.x);
+                int by = (int)(Mathf.Round(hitBlock.y) - thisChunk.location.y);
+                int bz = (int)(Mathf.Round(hitBlock.z) - thisChunk.location.z);
+
+                var blockNeighbour = GetWorldNeighbour(
+                    new Vector3Int(bx, by, bz),
+                    Vector3Int.CeilToInt(thisChunk.location)
+                );
+
+                thisChunk = chunks[blockNeighbour.Item2];
+                int i = ToFlat(blockNeighbour.Item1);
+
+                // Left-click => remove
                 if (Input.GetMouseButtonDown(0))
                 {
-                    // removing half-a-normal => "dig"
-                    hitBlock = hit.point - hit.normal / 2.0f;
+                    // Dig logic
+                    if (MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]] != -1)
+                    {
+                        if (thisChunk.healthData[i] == MeshUtils.BlockType.NOCRACK)
+                            StartCoroutine(HealBlock(thisChunk, i));
+
+                        thisChunk.healthData[i]++;
+
+                        // If block is fully destroyed, set to AIR and let block above drop
+                        if (thisChunk.healthData[i] ==
+                            MeshUtils.BlockType.NOCRACK + MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]])
+                        {
+                            thisChunk.chunkData[i] = MeshUtils.BlockType.AIR;
+
+                            Vector3Int nBlock = FromFlat(i);
+                            var neighbourBlock = GetWorldNeighbour(
+                                new Vector3Int(nBlock.x, nBlock.y + 1, nBlock.z),
+                                Vector3Int.CeilToInt(thisChunk.location)
+                            );
+                            Vector3Int blockPos = neighbourBlock.Item1;
+                            int neighbourBlockIndex = ToFlat(blockPos);
+                            Chunk neighbourChunk = chunks[neighbourBlock.Item2];
+                            StartCoroutine(Drop(neighbourChunk, neighbourBlockIndex));
+                        }
+                    }
                 }
                 else
                 {
-                    // adding half-a-normal => "place"
-                    hitBlock = hit.point + hit.normal / 2.0f;
+                    // Right-click => place
+                    thisChunk.chunkData[i] = buildType;
+                    thisChunk.healthData[i] = MeshUtils.BlockType.NOCRACK;
+                    StartCoroutine(Drop(thisChunk, i));
                 }
 
-                Chunk thisChunk = hit.collider.gameObject.GetComponent<Chunk>();
-
-                if (thisChunk != null)
-                {
-                    int bx = (int)(Mathf.Round(hitBlock.x) - thisChunk.location.x);
-                    int by = (int)(Mathf.Round(hitBlock.y) - thisChunk.location.y);
-                    int bz = (int)(Mathf.Round(hitBlock.z) - thisChunk.location.z);
-
-
-                    var blockNeighbour = GetWorldNeighbour(
-                        new Vector3Int(bx, by, bz),
-                        Vector3Int.CeilToInt(thisChunk.location)
-                    );
-
-                    thisChunk = chunks[blockNeighbour.Item2];
-                    int i = ToFlat(blockNeighbour.Item1);
-
-                    // left-click => remove, right-click => place
-                    if (Input.GetMouseButtonDown(0))
-                    {
-                        // dig
-                        if (MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]] != -1)
-                        {
-                            if (thisChunk.healthData[i] == MeshUtils.BlockType.NOCRACK)
-                                StartCoroutine(HealBlock(thisChunk, i));
-                            thisChunk.healthData[i]++;
-
-                            if (thisChunk.healthData[i] ==
-                                MeshUtils.BlockType.NOCRACK +
-                                MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]]
-                            )
-                            {
-                                thisChunk.chunkData[i] = MeshUtils.BlockType.AIR;
-
-                                Vector3Int nBlock = FromFlat(i);
-                                var neighbourBlock = GetWorldNeighbour(
-                                    new Vector3Int(nBlock.x, nBlock.y + 1, nBlock.z),
-                                    Vector3Int.CeilToInt(thisChunk.location)
-                                );
-                                Vector3Int blockPos = neighbourBlock.Item1;
-                                int neighbourBlockIndex = ToFlat(blockPos);
-                                Chunk neighbourChunk = chunks[neighbourBlock.Item2];
-                                StartCoroutine(Drop(neighbourChunk, neighbourBlockIndex));
-                            }
-                        }
-
-                    }
-                    else
-                    {
-                        // place
-                        thisChunk.chunkData[i] = buildType;
-                        thisChunk.healthData[i] = MeshUtils.BlockType.NOCRACK;
-                        StartCoroutine(Drop(thisChunk, i));
-                    }
-
-                    RedrawChunk(thisChunk);
-                }
-
-                UpdateWorld();
+                // Redraw after changes
+                RedrawChunk(thisChunk);
             }
+
+            // Trigger any extra updates if needed
+            UpdateWorld();
         }
     }
+
 
     void RedrawChunk(Chunk c)
     {
