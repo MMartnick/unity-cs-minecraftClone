@@ -154,7 +154,7 @@ public class World : MonoBehaviour
         }
 
         fpc.transform.position = new Vector3(wd.fpcX, wd.fpcY, wd.fpcZ);
-
+        thirdPersonCamera.transform.position = new Vector3(wd.fpcX, 35, wd.fpcZ);
 
         mCamera.SetActive(false);
         thirdPersonCamera.SetActive(true);
@@ -388,8 +388,13 @@ public class World : MonoBehaviour
             usingThirdPerson = !usingThirdPerson;
 
             // Enable or disable the relevant cameras
-            if (fpc != null) fpc.SetActive(!usingThirdPerson);
+            if (fpc != null) fpc.GetComponentInChildren<Camera>().enabled = !usingThirdPerson;
             if (thirdPersonCamera != null) thirdPersonCamera.SetActive(usingThirdPerson);
+        }
+
+        if(usingThirdPerson)
+        {
+            thirdPersonCamera.transform.position = new Vector3(fpc.transform.position.x, 35, fpc.transform.position.z - 15);
         }
 
         if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1))
@@ -660,6 +665,7 @@ public class World : MonoBehaviour
         ) + 10;
 
         fpc.transform.position = new Vector3Int(xpos, ypos, zpos);
+        thirdPersonCamera.transform.position = new Vector3(xpos, 35, zpos);
         loadingBar.gameObject.SetActive(false);
         fpc.SetActive(true);
         lastBuildPosition = Vector3Int.CeilToInt(fpc.transform.position);

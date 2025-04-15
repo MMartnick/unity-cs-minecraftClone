@@ -8,7 +8,7 @@ public class PlayerCollisionHandler : MonoBehaviour
         if (hit.collider.CompareTag("Teleporter"))
         {
             // Teleport ourselves
-            transform.position = new Vector3(25f, 2500f, 25f);
+            transform.position = new Vector3(25f, 250f, 25f);
         }
     }
 }
