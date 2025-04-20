@@ -10,74 +10,105 @@ public class ThirdPersonController : MonoBehaviour
     public float gravity = 9f;
 
     [Header("Camera Settings")]
-    public Transform overheadCamera;     // Assign your third-person camera in the Inspector
+    public Transform overheadCamera;
     public Vector3 cameraOffset = new Vector3(0f, 35f, -15f);
 
     [Header("Sprite Settings")]
-    public Transform spriteTransform;    // Drag the child sprite here; it will billboard to the camera
+    public Transform spriteTransform;
+    public Animator animator;
+    public SpriteRenderer spriteRenderer;
 
     private CharacterController characterController;
     private float verticalVelocity = 0f;
 
+
     void Awake()
     {
         characterController = GetComponent<CharacterController>();
-
-        // Optionally, you can do a runtime lookup for your overheadCamera
-        // if it’s not assigned in the inspector:
-        //
-        // if (overheadCamera == null)
-        // {
-        //     overheadCamera = GameObject.Find("ThirdPersonCamera").transform;
-        // }
     }
 
     void Update()
     {
-        // ----- 1) Handle input & movement -----
+        // 1) Read input
         float horizontal = CrossPlatformInputManager.GetAxis("Horizontal"); // A/D or Left/Right
         float vertical = CrossPlatformInputManager.GetAxis("Vertical");   // W/S or Up/Down
 
-        // Move in XZ plane only
+        // 2) Move in the XZ plane
         Vector3 move = new Vector3(horizontal, 0f, vertical) * moveSpeed;
 
         // Gravity & jumping
         if (characterController.isGrounded)
         {
-            // Minor downward force so we stay “glued” to ground
             verticalVelocity = -0.5f;
-
-            // Check jump
             if (CrossPlatformInputManager.GetButtonDown("Jump"))
             {
                 verticalVelocity = jumpSpeed;
+
+                // Trigger jump animation if you want
+                if (animator != null)
+                {
+                    animator.SetTrigger("Jump");
+                }
             }
         }
         else
         {
             verticalVelocity -= gravity * Time.deltaTime;
         }
+
+        // Apply Y velocity
         move.y = verticalVelocity;
 
-        // Apply movement
+        // Move the CharacterController
         characterController.Move(move * Time.deltaTime);
 
-        // ----- 2) Position the overhead (third-person) camera -----
+        // 3) Position overhead camera
         if (overheadCamera != null)
         {
             overheadCamera.position = transform.position + cameraOffset;
-            // If you want the camera to always look down at the character, uncomment:
-            // overheadCamera.LookAt(transform);
         }
 
-        // ----- 3) Make the sprite always face the camera (billboard) -----
+        // 4) Billboard sprite to camera
         if (spriteTransform != null && overheadCamera != null)
         {
-            // Let the sprite “look at” the camera:
             spriteTransform.LookAt(overheadCamera.position);
+        }
 
-            // If the sprite is flipped by default, rotate by 180 on Y:
-            //spriteTransform.Rotate(0, 180, 0);
+        // 5) Update Animator parameters
+        if (animator != null)
+        {
+            // Pass raw movement axes to the animator
+            animator.SetFloat("MoveX", horizontal);
+            animator.SetFloat("MoveZ", vertical);
+
+            // Check if we're moving or idle (based on speed)
+            float speedValue = new Vector2(horizontal, vertical).magnitude;
+
+            if(horizontal < 0)
+            {
+                spriteRenderer.flipX = true;
+            }
+            if(horizontal > 0)
+            {
+                spriteRenderer.flipX = false;
+            }
+
+            if(speedValue == 0.0f)
+            {
+                animator.SetBool("isIdle", true);
+                animator.SetBool("isMoving", false);
+            }
+            else if(speedValue > 0.0f)
+            {
+                animator.SetBool("isMoving", true);
+                animator.SetBool("isIdle", false);
+            }
+
+            
+            
+
+            // Also set IsGrounded
+            animator.SetBool("IsGrounded", characterController.isGrounded);
         }
     }
 }
