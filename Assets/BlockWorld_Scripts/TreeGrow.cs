@@ -32,6 +32,9 @@ public class TreeGrow : MonoBehaviour
     public Mesh treeMesh;
     public Material treeMaterial;
 
+    private MeshUtils.BlockType blockBelow;
+    private Vector3 belowPos;
+
     private IEnumerator Start()
     {
         if(growthFactor < 0)
@@ -74,8 +77,8 @@ public class TreeGrow : MonoBehaviour
         //SpawnAgent();
 
         // 4) Finally, destroy this seed/gameObject
-        yield return new WaitForSecondsRealtime(600f);  // 600 seconds = 10 minutes
-        Destroy(gameObject);
+        yield return StartCoroutine(WaitToDestroy(3600f));  // 3600 seconds = 60 minutes
+        //Destroy(gameObject);
         yield break;
 
     }
@@ -109,6 +112,8 @@ public class TreeGrow : MonoBehaviour
                 continue;
             }
 
+            belowPos = new Vector3(bx,by+1,bz);
+
             MeshUtils.BlockType bType = world.GetBlockType(bx, by, bz);
 
             if (bType == MeshUtils.BlockType.AIR)
@@ -122,6 +127,7 @@ public class TreeGrow : MonoBehaviour
             if (bType == MeshUtils.BlockType.GRASSTOP || bType == MeshUtils.BlockType.GRASSSIDE || bType == MeshUtils.BlockType.DIRT)
             {
                 Debug.Log($"[TreeGrow] Valid grass soil: {bType}. Starting growth.");
+
                 yield break;
             }
             else
@@ -152,6 +158,13 @@ public class TreeGrow : MonoBehaviour
             if (this == null)
                 yield break;
 
+            blockBelow = world.GetBlockType((int)belowPos.x, (int)belowPos.y, (int)belowPos.z);
+            if (blockBelow == MeshUtils.BlockType.AIR || blockBelow == MeshUtils.BlockType.WATER || blockBelow == null)
+            {
+                Destroy(gameObject);
+                yield break;
+            }
+
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / growSeconds);
 
@@ -177,6 +190,21 @@ public class TreeGrow : MonoBehaviour
         // Optionally snap final scale:
         transform.localScale = finalScale;
         isGrowing = false;
+    }
+
+    private IEnumerator WaitToDestroy(float liveSeconds)
+    {
+        float elapsed = 0f;
+        while (elapsed < liveSeconds) { 
+        blockBelow = world.GetBlockType((int)belowPos.x, (int)belowPos.y, (int)belowPos.z);
+            if (blockBelow == MeshUtils.BlockType.AIR || blockBelow == MeshUtils.BlockType.WATER || blockBelow == null)
+            {
+             Destroy(gameObject);
+             yield break;
+            }
+        elapsed += Time.deltaTime;
+        yield return null;
+        }
     }
 
 
