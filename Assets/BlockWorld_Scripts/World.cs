@@ -1,4 +1,4 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Unity.Collections;
@@ -221,7 +221,7 @@ public class World : MonoBehaviour
 
                 if (digCave < World.caveSettings.probability)
                 {
-                    cData[i] = MeshUtils.BlockType.AIR;
+                    cData[i] = MeshUtils.BlockType.WATER;
                     return;
                 }
 
@@ -229,7 +229,7 @@ public class World : MonoBehaviour
                 if (surfaceHeight == y)
                 {
                     // remove WOODBASE line
-                    cData[i] = MeshUtils.BlockType.GRASSTOP; // or GRASSSIDE, but GRASSTOP helps the “top” look
+                    cData[i] = MeshUtils.BlockType.GRASSTOP; // or GRASSSIDE, but GRASSTOP helps the â€œtopâ€ look
                 }
                 else if (y < stoneHeight)
                 {
@@ -452,7 +452,7 @@ public class World : MonoBehaviour
             Chunk thisChunk = hit.collider.gameObject.GetComponent<Chunk>();
             if (thisChunk != null)
             {
-                // Figure out which block we’re pointing at
+                // Figure out which block weâ€™re pointing at
                 Vector3 centerOfBlock = hit.point - hit.normal / 2.0f;
                 // Convert to local chunk coords
                 int bx = (int)(Mathf.Round(centerOfBlock.x) - thisChunk.location.x);
@@ -518,17 +518,18 @@ public class World : MonoBehaviour
 
                 thisChunk = chunks[blockNeighbour.Item2];
                 int i = ToFlat(blockNeighbour.Item1);
-
+                thisChunk.healthData[i]++;
                 // Left-click => remove
                 if (Input.GetMouseButtonDown(0))
                 {
+                    
                     // Dig logic
                     if (MeshUtils.blockTypeHealth[(int)thisChunk.chunkData[i]] != -1)
                     {
                         if (thisChunk.healthData[i] == MeshUtils.BlockType.NOCRACK)
                             StartCoroutine(HealBlock(thisChunk, i));
 
-                        thisChunk.healthData[i]++;
+                       
 
                         // If block is fully destroyed, set to AIR and let block above drop
                         if (thisChunk.healthData[i] ==
@@ -566,7 +567,7 @@ public class World : MonoBehaviour
     }
 
 
-    void RedrawChunk(Chunk c)
+    public void RedrawChunk(Chunk c)
     {
         DestroyImmediate(c.GetComponent<MeshFilter>());
         DestroyImmediate(c.GetComponent<MeshRenderer>());
@@ -637,13 +638,13 @@ public class World : MonoBehaviour
             {
                 // water or sand can flow sideways
                 FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(1, 0, 0), strength - 1);
+                                  new Vector3Int(1, 0, 0), strength - 10);
                 FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(-1, 0, 0), strength - 1);
+                                  new Vector3Int(-1, 0, 0), strength - 10);
                 FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(0, 0, 1), strength - 1);
+                                  new Vector3Int(0, 0, 1), strength - 10);
                 FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(0, 0, -1), strength - 1);
+                                  new Vector3Int(0, 0, -1), strength - 10);
                 yield break;
             }
             else
@@ -679,20 +680,31 @@ public class World : MonoBehaviour
 
     void BuildChunkColumn(int x, int z, bool meshEnabled = true)
     {
-        // Build vertical stack of chunks.
         for (int y = 0; y < worldDimensions.y; y++)
         {
             Vector3Int pos = new Vector3Int(x, y * chunkDimensions.y, z);
+
+            // If we do NOT already have this chunk, create from scratch:
             if (!chunkChecker.Contains(pos))
             {
                 GameObject chunkObj = Instantiate(chunkPrefab);
                 chunkObj.name = $"Chunk_{pos.x}_{pos.y}_{pos.z}";
                 Chunk c = chunkObj.GetComponent<Chunk>();
-                c.CreateChunk(chunkDimensions, pos);
+
+                // PROBLEM (by default): c.CreateChunk(chunkDimensions, pos);
+                // That calls c.CreateChunk(..., true) => reâ€perlin
+
+                // FIX: pass 'true' only if chunk didn't exist before
+                c.CreateChunk(chunkDimensions, pos, true);
+
                 chunkChecker.Add(pos);
                 chunks.Add(pos, c);
             }
-            // Enable/disable the solid and fluid renderers.
+
+            // If it DOES exist, do not reâ€create the blocks:
+            // (You might already skip creation entirely, so no problem.)
+
+            // Then set meshRendererSolid.enabled = meshEnabled, etc.
             if (chunks[pos].meshRendererSolid != null)
                 chunks[pos].meshRendererSolid.enabled = meshEnabled;
             if (chunks[pos].meshRendererFluid != null)
@@ -700,6 +712,7 @@ public class World : MonoBehaviour
         }
         chunkColumns.Add(new Vector2Int(x, z));
     }
+
 
 
     IEnumerator BuildExtraWorld()
@@ -771,7 +784,7 @@ public class World : MonoBehaviour
     }
 
     WaitForSeconds wfs = new WaitForSeconds(0.5f);
-    IEnumerator UpdateWorld()
+    public IEnumerator UpdateWorld()
     {
         while (true)
         {
@@ -921,7 +934,7 @@ public class World : MonoBehaviour
     {
         // Example: If you just want to re-use the old ComputeLocationScore logic,
         // you can do a simpler approach, e.g. measure the block y-height or block composition.
-        // For demonstration, let’s do an extremely naive: the higher the ground, the higher the value.
+        // For demonstration, letâ€™s do an extremely naive: the higher the ground, the higher the value.
         int topY = 0;
         for (int y = worldDimensions.y * chunkDimensions.y - 1; y >= 0; y--)
         {

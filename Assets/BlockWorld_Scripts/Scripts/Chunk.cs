@@ -14,9 +14,9 @@ public class Chunk : MonoBehaviour
     public Material waterMaterial; // Transparent (fluid) material
 
     [Header("Chunk Dimensions")]
-    public int width = 10;
-    public int height = 10;
-    public int depth = 10;
+    public int width = 30;
+    public int height =30;
+    public int depth = 30;
 
     public Vector3 location;
 

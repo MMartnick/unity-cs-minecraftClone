@@ -143,6 +143,7 @@ PlayerSettings:
   bundleVersion: 0.1.0
   preloadedAssets:
   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 11400000, guid: 99f9c9493070a9d4c979a8fec7c5a8d3, type: 2}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   m_HolographicPauseOnTrackingLoss: 1
@@ -858,11 +859,11 @@ PlayerSettings:
   m_MobileRenderingPath: 1
   metroPackageName: unity-muse-test
   metroPackageVersion: 1.0.0.0
-  metroCertificatePath: 
+  metroCertificatePath: Assets/WSATestCertificate.pfx
   metroCertificatePassword: 
-  metroCertificateSubject: 
-  metroCertificateIssuer: 
-  metroCertificateNotAfter: 0000000000000000
+  metroCertificateSubject: Matt-Martnick
+  metroCertificateIssuer: Matt-Martnick
+  metroCertificateNotAfter: 00d7504e2fd6dc01
   metroApplicationDescription: unity-muse-test
   wsaImages: {}
   metroTileShortName: unity-muse-test

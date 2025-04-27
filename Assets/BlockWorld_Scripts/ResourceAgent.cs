@@ -141,6 +141,8 @@ public class ResourceAgent : Agent
     /// </summary>
     private void Update()
     {
+        EnsureAboveGround();
+
         if (!_isMoving) return;
 
         transform.position = Vector3.MoveTowards(
@@ -320,7 +322,7 @@ public class ResourceAgent : Agent
             bz = nz;
 
             int nextSurfaceY = FindTopSurface(nx, nz);
-            if (by > 0 || by <= nextSurfaceY)
+            if (by <= nextSurfaceY)
             {
                 by = nextSurfaceY +1;
             }
@@ -330,7 +332,7 @@ public class ResourceAgent : Agent
                 if (!IsSolidBlock(bType) && by > FindTopSurface((int)bx, (int)bz)) { 
                 by -= 1; // forcibly drop one block
                 }
-                //AttemptMovement(6);
+         
             }
         }
 
@@ -368,6 +370,8 @@ public class ResourceAgent : Agent
         // 2) Solid check => disallow if it's e.g. stone, sand, etc.
         MeshUtils.BlockType bType = world.GetBlockType(nx, ny, nz);
         if (IsSolidBlock(bType)) return false;
+        if (IsSolidBlock(bType) && transform.position.y < 15) return true;
+
 
         return true; // air or water is OK
     }
@@ -387,6 +391,47 @@ public class ResourceAgent : Agent
 
         return true; // air or water is OK
     }
+
+    /// <summary>
+    /// Keep the agent “riding the terrain”.  
+    /// If it is **inside any solid block, touching BEDROCK, or sitting at/below
+    /// the highest solid voxel for the current X-Z column**, we pop it up to
+    ///   (topSurface + 1).
+    /// </summary>
+    private void EnsureAboveGround()
+    {
+        int ix = Mathf.RoundToInt(gridX);
+        int iz = Mathf.RoundToInt(gridZ);
+
+        // Bail if the X-Z column is outside the generated world.
+        if (!world.InBounds(ix, 0, iz))
+            return;
+
+        // Highest solid block in this column (BEDROCK counts as solid).
+        int topSurface = FindTopSurface(ix, iz);   // returns 0 if only bedrock
+
+        // Where the agent *should* stand.
+        int desiredY = topSurface + 1;
+
+        // What block is the agent currently in?
+        int iy = Mathf.RoundToInt(gridY);
+        MeshUtils.BlockType currentBlock = world.GetBlockType(ix, iy, iz);
+        bool insideSolid = IsSolidBlock(currentBlock);   // true for BEDROCK too
+
+        //–––  Teleport up when any of the following are true ––––––––––––––––––––
+        //   • agent is intersecting a solid voxel
+        //   • agent is at/below the terrain surface
+        //   • agent’s Y fell below zero for any reason
+        //------------------------------------------------------------------------
+        if (insideSolid || iy <= topSurface || iy <= 10)
+        {
+            gridY = desiredY;
+            SetAgentAboveBlock(gridX, gridY, gridZ);   // updates _targetPosition
+            _isMoving = false;                         // cancel any smooth-move
+        }
+    }
+
+
 
     // ------------------------------------------------------------------------
     // HELPER: Decide if a block is "solid" => agent can’t move into it
