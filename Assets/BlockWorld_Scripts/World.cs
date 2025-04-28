@@ -314,7 +314,7 @@ public class World : MonoBehaviour
         );
     }
 
-    int ToFlat(Vector3Int v)
+    public int ToFlat(Vector3Int v)
     {
         return v.x + chunkDimensions.x * (v.y + chunkDimensions.z * v.z);
     }
@@ -589,68 +589,113 @@ public class World : MonoBehaviour
 
     WaitForSeconds dropDelay = new WaitForSeconds(0.1f);
 
+    // Example: always let water drop if there's air below.
     public IEnumerator Drop(Chunk c, int blockIndex, int strength = 3)
     {
-        if (!MeshUtils.canDrop.Contains(c.chunkData[blockIndex]))
+        // 1) Determine block type
+        BlockType blockType = c.chunkData[blockIndex];
+
+        // 2) If block is NOT water and NOT canDrop => no drop
+        //    (Because water is forced to drop if there's air)
+        if (blockType != BlockType.WATER && !MeshUtils.canDrop.Contains(blockType))
             yield break;
 
+        // Wait a short delay before we do anything (optional)
         yield return dropDelay;
 
+        // 3) Loop for repeated falling (gravity)
         while (true)
         {
-            Vector3Int thisBlock = FromFlat(blockIndex);
-            var neighbourBlock = GetWorldNeighbour(
-                new Vector3Int(thisBlock.x, thisBlock.y - 1, thisBlock.z),
+            // Convert flatten index => local (x,y,z)
+            Vector3Int localPos = FromFlat(blockIndex);
+
+            // Check the block below
+            var belowLookup = GetWorldNeighbour(
+                new Vector3Int(localPos.x, localPos.y - 1, localPos.z),
                 Vector3Int.CeilToInt(c.location)
             );
-            Vector3Int block = neighbourBlock.Item1;
-            int neighbourBlockIndex = ToFlat(block);
-            Chunk neighbourChunk = chunks[neighbourBlock.Item2];
+            Vector3Int belowLocalPos = belowLookup.Item1;
+            Vector3Int belowChunkKey = belowLookup.Item2;
 
-            if (neighbourChunk != null &&
-                neighbourChunk.chunkData[neighbourBlockIndex] == MeshUtils.BlockType.AIR)
+            // If outside world or chunk not loaded
+            if (!chunks.TryGetValue(belowChunkKey, out Chunk belowChunk))
+                yield break;
+
+            int belowIndex = ToFlat(belowLocalPos);
+
+            // 3a) If below is AIR, we move down
+            if (belowChunk.chunkData[belowIndex] == BlockType.AIR)
             {
-                // drop block down
-                neighbourChunk.chunkData[neighbourBlockIndex] = c.chunkData[blockIndex];
-                neighbourChunk.healthData[neighbourBlockIndex] = MeshUtils.BlockType.NOCRACK;
+                // Move the block down
+                belowChunk.chunkData[belowIndex] = blockType;
+                belowChunk.healthData[belowIndex] = BlockType.NOCRACK;
 
-                var nBlockAbove = GetWorldNeighbour(
-                    new Vector3Int(thisBlock.x, thisBlock.y + 1, thisBlock.z),
+                // Clear the old position
+                c.chunkData[blockIndex] = BlockType.AIR;
+                c.healthData[blockIndex] = BlockType.NOCRACK;
+
+                // Also let the block above drop
+                var aboveLookup = GetWorldNeighbour(
+                    new Vector3Int(localPos.x, localPos.y + 1, localPos.z),
                     Vector3Int.CeilToInt(c.location)
                 );
-                Vector3Int blockAbove = nBlockAbove.Item1;
-                int nBlockAboveIndex = ToFlat(blockAbove);
-                Chunk nChunkAbove = chunks[nBlockAbove.Item2];
+                Vector3Int aboveLocalPos = aboveLookup.Item1;
+                Vector3Int aboveChunkKey = aboveLookup.Item2;
+                if (chunks.TryGetValue(aboveChunkKey, out Chunk aboveChunk))
+                {
+                    int aboveIndex = ToFlat(aboveLocalPos);
+                    // Start a coroutine to drop the block above as well
+                    StartCoroutine(Drop(aboveChunk, aboveIndex));
+                }
 
-                c.chunkData[blockIndex] = MeshUtils.BlockType.AIR;
-                c.healthData[blockIndex] = MeshUtils.BlockType.NOCRACK;
-                StartCoroutine(Drop(nChunkAbove, nBlockAboveIndex));
-
-                yield return dropDelay;
+                // Redraw changed chunks (or queue them for redraw)
                 RedrawChunk(c);
-                if (neighbourChunk != c)
-                    RedrawChunk(neighbourChunk);
+                if (belowChunk != c)
+                    RedrawChunk(belowChunk);
 
-                c = neighbourChunk;
-                blockIndex = neighbourBlockIndex;
+                // Update references so we keep dropping
+                c = belowChunk;
+                blockIndex = belowIndex;
+
+                // If you want to limit total drops, decrement strength
+                strength--;
+                if (strength <= 0)
+                    yield break;
+
+                // Wait before next iteration
+                yield return dropDelay;
             }
-            else if (MeshUtils.canFlow.Contains(c.chunkData[blockIndex]))
+            // 3b) If we can't fall, check if the block can flow sideways
+            else if (MeshUtils.canFlow.Contains(blockType))
             {
-                // water or sand can flow sideways
-                FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(1, 0, 0), strength - 10);
-                FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(-1, 0, 0), strength - 10);
-                FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(0, 0, 1), strength - 10);
-                FlowIntoNeighbour(thisBlock, Vector3Int.CeilToInt(c.location),
-                                  new Vector3Int(0, 0, -1), strength - 10);
+                // e.g., water or sand that can flow sideways
+                int newStrength = strength - 1; // or strength as is
+
+                // Flow in four directions
+                FlowIntoNeighbour(localPos, Vector3Int.CeilToInt(c.location),
+                                  new Vector3Int(1, 0, 0), newStrength);
+                FlowIntoNeighbour(localPos, Vector3Int.CeilToInt(c.location),
+                                  new Vector3Int(-1, 0, 0), newStrength);
+                FlowIntoNeighbour(localPos, Vector3Int.CeilToInt(c.location),
+                                  new Vector3Int(0, 0, 1), newStrength);
+                FlowIntoNeighbour(localPos, Vector3Int.CeilToInt(c.location),
+                                  new Vector3Int(0, 0, -1), newStrength);
+
+                // Redraw if needed
+                RedrawChunk(c);
+                // Then stop
                 yield break;
             }
             else
+            {
+                // Can't drop, can't flow => done
                 yield break;
+            }
         }
     }
+
+
+
 
     public void FlowIntoNeighbour(Vector3Int blockPosition,
                                   Vector3Int chunkPosition,

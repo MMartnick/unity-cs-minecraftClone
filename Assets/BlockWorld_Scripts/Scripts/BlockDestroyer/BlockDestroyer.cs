@@ -12,7 +12,7 @@ public class BlockDestroyer : MonoBehaviour
     public LayerMask chunkLayerMask = ~0;
 
     // Half-extents of the 30×30×30 box
-    private static readonly Vector3 RangeExtents = new Vector3(15f, 15f, 15f);
+    private static readonly Vector3 RangeExtents = new Vector3(30f, 30f, 30f);
 
     // Directions to check for neighbor-chunk redraw
     private static readonly Vector3Int[] Neighbors = {
@@ -28,6 +28,7 @@ public class BlockDestroyer : MonoBehaviour
     private List<Vector3> damagedBlockCenters = new List<Vector3>();
     void Awake()
     {
+        transform.localScale = RangeExtents;
         var rb = GetComponent<Rigidbody>();
         rb.isKinematic = true;
         rb.useGravity = false;
@@ -97,7 +98,7 @@ public class BlockDestroyer : MonoBehaviour
         if (type == BlockType.AIR) return;  // nothing to destroy
 
         owner.healthData[idx]++;
-        int dmg = (int)owner.healthData[idx];
+        int dmg = (int)owner.healthData[idx] + 12;
         int maxHits = blockTypeHealth[(int)type];
 
         if (dmg == (int)BlockType.NOCRACK)
